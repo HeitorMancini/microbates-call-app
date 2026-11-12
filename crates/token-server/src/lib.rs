@@ -23,6 +23,9 @@ pub use token::{Claims, VideoGrant};
 pub struct TokenRequest {
     pub room: String,
     pub name: String,
+    /// Subscribe-only token for the WebView video viewer.
+    #[serde(default)]
+    pub viewer: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -84,12 +87,13 @@ async fn issue_token(
         return error(StatusCode::BAD_REQUEST, e.to_string());
     }
 
-    let claims = token::build_claims(
+    let claims = token::build_claims_for(
         &config.api_key,
         &req.room,
         &req.name,
         config.token_ttl,
         token::unix_now(),
+        req.viewer,
     );
     match token::encode(&claims, &config.api_secret) {
         Ok(token) => {

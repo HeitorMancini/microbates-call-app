@@ -27,5 +27,7 @@ pub use hub::{MediaHub, MediaStats, PreviewConfig, PreviewFrame, SAMPLES_PER_10M
 #[cfg(windows)]
 pub use screen::WgcScreen;
 pub use token::HttpTokenProvider;
-pub use transport::{preset_max_bitrate, LiveKitTransport, TransportOptions};
+pub use transport::{
+    preset_max_bitrate, LiveKitTransport, TransportOptions, VIEWER_IDENTITY_PREFIX,
+};
 pub use video::encode_jpeg;

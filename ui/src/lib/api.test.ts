@@ -55,8 +55,13 @@ describe('backend Tauri segue o CONTRACT.md', () => {
     handler({ payload: [{ id: 'a' }] });
     expect(cb).toHaveBeenCalledWith([{ id: 'a' }]);
     await b.onRoomState(cb);
-    await b.onScreenFrame(cb);
-    expect(listen.mock.calls.map((c) => c[0])).toEqual(['room://participants', 'room://state', 'room://screen-frame']);
+    expect(listen.mock.calls.map((c) => c[0])).toEqual(['room://participants', 'room://state']);
+  });
+
+  it('abre o vídeo com credenciais somente-assinatura vindas do Rust', async () => {
+    invoke.mockRejectedValueOnce('Você não está em nenhuma sala.');
+    await expect(createTauriBackend().openVideo()).rejects.toMatch(/nenhuma sala/);
+    expect(invoke).toHaveBeenCalledWith('viewer_credentials');
   });
 });
 

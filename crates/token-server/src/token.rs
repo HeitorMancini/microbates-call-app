@@ -54,8 +54,27 @@ pub fn unique_identity(name: &str) -> String {
     format!("{}-{}", name.trim(), &suffix[..8])
 }
 
+/// Identities starting with this prefix belong to the subscribe-only video viewer that the
+/// WebView opens next to the native participant; the native client hides them from the roster.
+pub const VIEWER_IDENTITY_PREFIX: &str = "viewer~";
+
 pub fn build_claims(api_key: &str, room: &str, name: &str, ttl: Duration, now: u64) -> Claims {
-    let identity = unique_identity(name);
+    build_claims_for(api_key, room, name, ttl, now, false)
+}
+
+pub fn build_claims_for(
+    api_key: &str,
+    room: &str,
+    name: &str,
+    ttl: Duration,
+    now: u64,
+    viewer: bool,
+) -> Claims {
+    let identity = if viewer {
+        format!("{VIEWER_IDENTITY_PREFIX}{}", unique_identity(name))
+    } else {
+        unique_identity(name)
+    };
     Claims {
         iss: api_key.to_owned(),
         jti: identity.clone(),
@@ -66,9 +85,9 @@ pub fn build_claims(api_key: &str, room: &str, name: &str, ttl: Duration, now: u
         video: VideoGrant {
             room_join: true,
             room: room.trim().to_owned(),
-            can_publish: true,
+            can_publish: !viewer,
             can_subscribe: true,
-            can_publish_data: true,
+            can_publish_data: !viewer,
         },
     }
 }
@@ -123,6 +142,15 @@ mod tests {
         let b = unique_identity("heitor");
         assert_ne!(a, b);
         assert!(a.starts_with("heitor-"));
+    }
+
+    #[test]
+    fn viewer_tokens_are_subscribe_only_with_prefixed_identity() {
+        let c = build_claims_for("key", "sala", "ana", Duration::from_secs(60), 0, true);
+        assert!(c.sub.starts_with(VIEWER_IDENTITY_PREFIX));
+        assert!(c.video.can_subscribe && !c.video.can_publish && !c.video.can_publish_data);
+        let c = build_claims("key", "sala", "ana", Duration::from_secs(60), 0);
+        assert!(!c.sub.starts_with(VIEWER_IDENTITY_PREFIX) && c.video.can_publish);
     }
 
     #[test]

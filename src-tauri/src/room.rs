@@ -1,25 +1,19 @@
 //! Serviço de sala: valida a entrada dos comandos, delega para o
 //! [`RoomController`] de `sheeshcord_core` e repassa os eventos (`room://state`,
-//! `room://participants` e, com mídia real, `room://screen-frame`) a um [`EventSink`].
+//! `room://participants`) a um [`EventSink`]. O vídeo é renderizado pela própria WebView.
 
 use std::sync::{Arc, Mutex, PoisonError};
 
-use base64::Engine as _;
 use serde::Serialize;
 use sheeshcord_core::{
     CoreError, Dependencies, JoinParams, RoomConfig, RoomController, RoomEvent, RoomStatus,
 };
-use sheeshcord_media::{encode_jpeg, MediaHub, PreviewFrame};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 
-use crate::model::{
-    AudioDevices, DeviceKind, Participant, RoomState, ScreenFrame, ScreenPreset, ScreenSource,
-};
+use crate::model::{AudioDevices, DeviceKind, Participant, RoomState, ScreenPreset, ScreenSource};
 
 pub const MAX_FIELD_LEN: usize = 64;
-/// Qualidade JPEG dos quadros de tela enviados ao WebView (spike, ver crates/media/SPIKE.md).
-pub const PREVIEW_JPEG_QUALITY: u8 = 70;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RoomError {
@@ -75,7 +69,6 @@ impl Serialize for RoomError {
 pub trait EventSink: Send + Sync {
     fn state(&self, state: &RoomState);
     fn participants(&self, participants: &[Participant]);
-    fn screen_frame(&self, frame: &ScreenFrame);
 }
 
 fn validate_field(label: &'static str, value: &str) -> Result<String, RoomError> {
@@ -104,17 +97,6 @@ fn validate_server_url(value: &str) -> Result<String, RoomError> {
     Ok(url.to_owned())
 }
 
-/// Converte um quadro RGBA da mídia no payload de `room://screen-frame`.
-pub fn encode_screen_frame(frame: &PreviewFrame) -> Result<ScreenFrame, String> {
-    let jpeg = encode_jpeg(frame.width, frame.height, &frame.rgba, PREVIEW_JPEG_QUALITY)?;
-    Ok(ScreenFrame {
-        participant_id: frame.participant_id.clone(),
-        width: frame.width,
-        height: frame.height,
-        jpeg_base64: base64::engine::general_purpose::STANDARD.encode(jpeg),
-    })
-}
-
 #[derive(Default)]
 struct SelectedDevices {
     input: Option<String>,
@@ -124,6 +106,7 @@ struct SelectedDevices {
 pub struct RoomService {
     controller: RoomController,
     selected: Mutex<SelectedDevices>,
+    joined: Mutex<Option<JoinParams>>,
     tasks: Vec<JoinHandle<()>>,
 }
 
@@ -147,16 +130,19 @@ impl RoomService {
         Self {
             controller,
             selected: Mutex::default(),
+            joined: Mutex::default(),
             tasks: vec![forward],
         }
     }
 
-    /// Como [`RoomService::new`], também repassando os quadros de vídeo do `hub` ao sink.
-    pub fn with_previews(deps: Dependencies, hub: &MediaHub, sink: Arc<dyn EventSink>) -> Self {
-        let previews = tokio::spawn(forward_previews(hub.clone(), Arc::clone(&sink)));
-        let mut service = Self::new(deps, sink);
-        service.tasks.push(previews);
-        service
+    /// Dados da sala atual (servidor, sala, nome), usados para abrir o visualizador de vídeo.
+    pub fn joined(&self) -> Result<JoinParams, RoomError> {
+        self.ensure_connected()?;
+        self.joined
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or(RoomError::NotConnected)
     }
 
     fn ensure_connected(&self) -> Result<(), RoomError> {
@@ -179,10 +165,16 @@ impl RoomService {
             name: validate_field("nome", name)?,
         };
         tracing::info!(server_url = %params.server_url, room = %params.room, "entrando na sala");
-        Ok(self.controller.join(params).await?)
+        self.controller.join(params.clone()).await?;
+        *self.joined.lock().unwrap_or_else(PoisonError::into_inner) = Some(params);
+        Ok(())
     }
 
     pub async fn leave_room(&self) -> Result<(), RoomError> {
+        self.joined
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
         Ok(self.controller.leave().await?)
     }
 
@@ -288,23 +280,6 @@ async fn forward_room_events(
     }
 }
 
-async fn forward_previews(hub: MediaHub, sink: Arc<dyn EventSink>) {
-    let mut previews = hub.subscribe_previews();
-    loop {
-        let frame = match previews.recv().await {
-            Ok(frame) => frame,
-            // Quadros antigos não interessam: segue com o mais recente.
-            Err(RecvError::Lagged(_)) => continue,
-            Err(RecvError::Closed) => break,
-        };
-        match tokio::task::spawn_blocking(move || encode_screen_frame(&frame)).await {
-            Ok(Ok(frame)) => sink.screen_frame(&frame),
-            Ok(Err(e)) => tracing::warn!(error = %e, "falha ao codificar quadro de tela"),
-            Err(e) => tracing::warn!(error = %e, "falha ao codificar quadro de tela"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -318,7 +293,6 @@ mod tests {
     enum Event {
         State(RoomState),
         Participants(Vec<Participant>),
-        Frame(ScreenFrame),
     }
 
     #[derive(Default)]
@@ -333,9 +307,6 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(Event::Participants(participants.to_vec()));
-        }
-        fn screen_frame(&self, frame: &ScreenFrame) {
-            self.0.lock().unwrap().push(Event::Frame(frame.clone()));
         }
     }
 
@@ -615,26 +586,5 @@ mod tests {
             RoomError::from(CoreError::AlreadyActive),
             RoomError::AlreadyConnected
         );
-    }
-
-    #[test]
-    fn preview_frames_become_base64_jpeg() {
-        let frame = PreviewFrame {
-            participant_id: "ana".into(),
-            width: 32,
-            height: 16,
-            rgba: Arc::new(vec![200; 32 * 16 * 4]),
-        };
-        let out = encode_screen_frame(&frame).unwrap();
-        assert_eq!(
-            (out.participant_id.as_str(), out.width, out.height),
-            ("ana", 32, 16)
-        );
-        let jpeg = base64::engine::general_purpose::STANDARD
-            .decode(&out.jpeg_base64)
-            .unwrap();
-        assert_eq!(&jpeg[..2], &[0xFF, 0xD8], "marcador SOI do JPEG");
-        let json = serde_json::to_value(&out).unwrap();
-        assert!(json.get("jpegBase64").is_some() && json.get("participantId").is_some());
     }
 }

@@ -7,8 +7,8 @@ import {
   type Backend,
   type Participant,
   type RoomState,
-  type ScreenFrame,
   type ScreenSource,
+  type ViewerCredentials,
 } from './types';
 
 /** Backend real: comandos e eventos exatamente como no CONTRACT.md. */
@@ -31,7 +31,11 @@ export function createTauriBackend(): Backend {
     stopScreenShare: () => invoke('stop_screen_share'),
     onRoomState: on<RoomState>(EVENTS.state),
     onParticipants: on<Participant[]>(EVENTS.participants),
-    onScreenFrame: on<ScreenFrame>(EVENTS.screenFrame),
+    openVideo: async () => {
+      const creds = await invoke<ViewerCredentials>('viewer_credentials');
+      const { connectVideoSession } = await import('./video');
+      return connectVideoSession(creds);
+    },
   };
 }
 

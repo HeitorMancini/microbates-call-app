@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { FrameRenderer } from '../lib/frames';
-  import type { Backend, Participant, ScreenFrame, Unlisten } from '../lib/types';
+  import type { Backend, Participant, VideoSession, VideoStats, VideoStatus } from '../lib/types';
   import Icon from './Icon.svelte';
 
   let { backend, sharers }: { backend: Backend; sharers: Participant[] } = $props();
@@ -10,46 +9,49 @@
   const current = $derived(sharers.find((p) => p.id === chosenId) ?? sharers[0] ?? null);
 
   let frame: HTMLElement | undefined = $state();
-  let canvas: HTMLCanvasElement | undefined = $state();
-  let hasFrame = $state(false);
+  let video: HTMLVideoElement | undefined = $state();
+  let session = $state<VideoSession | null>(null);
+  let status = $state<VideoStatus>('connecting');
+  let message = $state('');
+  let stats = $state<VideoStats | null>(null);
   let fullscreen = $state(false);
-  let resolution = $state('');
 
-  let renderer: FrameRenderer | null = null;
-
-  $effect(() => {
-    if (!canvas) return;
-    const r = new FrameRenderer(canvas);
-    r.onFirstFrame = () => (hasFrame = true);
-    renderer = r;
-    return () => r.dispose();
-  });
-
-  // Troca de transmissão: limpa o canvas até chegar o primeiro frame novo.
-  $effect(() => {
-    void current?.id;
-    hasFrame = false;
-    if (renderer) renderer.framesDrawn = 0;
-  });
+  const hasFrame = $derived(status === 'playing');
+  const resolution = $derived(stats ? `${stats.width}×${stats.height}` : '');
+  const detail = $derived(stats ? `${stats.fps} fps · ${(stats.bitrateKbps / 1000).toFixed(1)} Mbps` : '');
 
   $effect(() => {
-    let unlisten: Unlisten | null = null;
     let disposed = false;
-    void backend
-      .onScreenFrame((f: ScreenFrame) => {
-        if (f.participantId !== current?.id) return;
-        const label = `${f.width}×${f.height}`;
-        if (resolution !== label) resolution = label;
-        renderer?.push(f);
+    let opened: VideoSession | null = null;
+    backend
+      .openVideo()
+      .then((s) => {
+        if (disposed) s.close();
+        else session = opened = s;
       })
-      .then((u) => {
-        if (disposed) u();
-        else unlisten = u;
+      .catch((e: unknown) => {
+        status = 'error';
+        message = typeof e === 'string' ? e : e instanceof Error ? e.message : 'Não foi possível abrir o vídeo.';
       });
     return () => {
       disposed = true;
-      unlisten?.();
+      session = null;
+      opened?.close();
     };
+  });
+
+  // Troca de transmissão: liga o <video> à tela escolhida.
+  $effect(() => {
+    const id = current?.id;
+    if (!session || !video || !id) return;
+    status = 'connecting';
+    message = '';
+    stats = null;
+    return session.watch(id, video, (u) => {
+      status = u.status;
+      message = u.message ?? '';
+      if (u.stats) stats = u.stats;
+    });
   });
 
   onDestroy(() => {
@@ -109,12 +111,28 @@
     onkeydown={onKey}
     ondblclick={toggleFullscreen}
   >
-    <canvas bind:this={canvas} class:visivel={hasFrame} data-testid="screen-canvas" aria-hidden="true"></canvas>
+    <video
+      bind:this={video}
+      class:visivel={hasFrame}
+      data-testid="screen-video"
+      aria-hidden="true"
+      autoplay
+      muted
+      playsinline
+    ></video>
     {#if !hasFrame}
-      <p class="espera" role="status">Aguardando a imagem…</p>
+      <p class="espera" role="status">
+        {#if message}
+          {message}
+        {:else if status === 'connecting'}
+          Conectando ao vídeo…
+        {:else}
+          Aguardando a imagem…
+        {/if}
+      </p>
     {/if}
     <div class="controles">
-      {#if resolution && hasFrame}<span class="resolucao">{resolution}</span>{/if}
+      {#if resolution && hasFrame}<span class="resolucao">{resolution}{detail ? ` · ${detail}` : ''}</span>{/if}
       <button
         type="button"
         class="botao icone"
@@ -186,7 +204,7 @@
     background: #000;
   }
 
-  canvas {
+  video {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -196,7 +214,7 @@
     transition: opacity 240ms ease;
   }
 
-  canvas.visivel {
+  video.visivel {
     opacity: 1;
   }
 

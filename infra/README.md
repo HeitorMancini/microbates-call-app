@@ -35,3 +35,19 @@ na primeira execução (`-Rebuild` força recompilar).
   Para trocar, passe `-ApiKey`/`-ApiSecret` (o script repassa ao LiveKit e ao token-server).
 - `use_external_ip: false`: o LiveKit anuncia só o IP informado em `-NodeIp`, ideal para VPN.
 - Se alguém não conectar áudio, confira se as portas UDP 50000–50100 estão liberadas no host.
+
+## Domínio microbates.com (opcional)
+
+O vídeo é recebido no WebView via `livekit-client`. Se o WebView bloquear `ws://`
+(conteúdo misto), use TLS (`wss://`) com um subdomínio:
+
+1. No Hostinger (DNS), crie `A live.microbates.com -> 26.x.x.x` (IP Radmin do host; só
+   resolve útil dentro da VPN, nada é exposto à internet).
+2. Emita o certificado por **DNS-01** (não exige abrir portas): Caddy com plugin DNS ou
+   `acme.sh`/`lego`. Veja `infra/Caddyfile` (ajuste o plugin do provedor).
+3. Rode o Caddy no host: `https://live.microbates.com` → token-server e
+   `wss://live.microbates.com:7443` → LiveKit (7880).
+4. No app, use o servidor `https://live.microbates.com`.
+
+Antes de expor algo à internet, troque `devkey/devsecret` e revise o firewall.
+Alternativa gratuita fora de casa: Oracle Cloud Always Free (VM ARM) com o mesmo stack.

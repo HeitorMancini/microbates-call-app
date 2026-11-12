@@ -56,12 +56,11 @@ test('fluxo completo: entrar, ver participantes, mutar, compartilhar e sair', as
   await expect(dialog).toBeHidden();
 
   await expect(page.getByRole('heading', { name: 'Sua tela' })).toBeVisible();
-  await expect(page.getByTestId('screen-canvas')).toHaveClass(/visivel/, { timeout: 10_000 });
-  await expect(page.getByText('1920×1080')).toBeVisible();
-  const painted = await page.getByTestId('screen-canvas').evaluate((c: HTMLCanvasElement) => {
-    const px = c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data;
-    return px[3] > 0;
-  });
+  await expect(page.getByTestId('screen-video')).toHaveClass(/visivel/, { timeout: 10_000 });
+  await expect(page.getByText(/1920×1080/)).toBeVisible();
+  const painted = await page
+    .getByTestId('screen-video')
+    .evaluate((v: HTMLVideoElement) => v.srcObject instanceof MediaStream);
   expect(painted).toBe(true);
 
   await page.getByRole('button', { name: 'Parar de compartilhar' }).click();
@@ -76,7 +75,7 @@ test('fluxo completo: entrar, ver participantes, mutar, compartilhar e sair', as
 test('visualizador mostra a tela de outra pessoa e entra em tela cheia', async ({ page }) => {
   await joinRoom(page, '?mock=1&remoteShare=1');
   await expect(page.getByRole('heading', { name: 'Tela de Bia Rocha' })).toBeVisible();
-  await expect(page.getByTestId('screen-canvas')).toHaveClass(/visivel/, { timeout: 10_000 });
+  await expect(page.getByTestId('screen-video')).toHaveClass(/visivel/, { timeout: 10_000 });
 
   await page.getByRole('button', { name: 'Tela cheia' }).click();
   await expect(page.getByRole('button', { name: 'Sair da tela cheia' })).toBeVisible();

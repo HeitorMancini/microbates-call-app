@@ -6,10 +6,11 @@ import type {
   JoinParams,
   Participant,
   RoomState,
-  ScreenFrame,
   ScreenPreset,
   ScreenSource,
   Unlisten,
+  VideoSession,
+  VideoUpdate,
 } from './types';
 
 export interface MockOptions {
@@ -18,7 +19,7 @@ export interface MockOptions {
   /** Intervalo entre mudanças de quem está falando (0 desliga). */
   speakTickMs?: number;
   autoSpeak?: boolean;
-  /** Gera frames JPEG de teste para quem compartilha tela. */
+  /** Gera vídeo de teste (canvas.captureStream) para quem compartilha tela. */
   frames?: boolean;
   /** Um amigo já entra compartilhando tela. */
   remoteSharing?: boolean;
@@ -53,10 +54,9 @@ const PRESET_SIZE: Record<ScreenPreset, [number, number, number]> = {
 type Handlers = {
   state: Set<(s: RoomState) => void>;
   participants: Set<(p: Participant[]) => void>;
-  frame: Set<(f: ScreenFrame) => void>;
 };
 
-const canMakeJpeg = () =>
+const canMakeVideo = () =>
   typeof document !== 'undefined' &&
   typeof navigator !== 'undefined' &&
   !/jsdom/i.test(navigator.userAgent);
@@ -67,22 +67,19 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
     latencyMs = 350,
     speakTickMs = 700,
     autoSpeak = true,
-    frames = canMakeJpeg(),
+    frames = canMakeVideo(),
     remoteSharing = false,
     random = Math.random,
   } = options;
 
-  const handlers: Handlers = { state: new Set(), participants: new Set(), frame: new Set() };
+  const handlers: Handlers = { state: new Set(), participants: new Set() };
   let participants: Participant[] = [];
   let connected = false;
   let deafened = false;
   let mutedBeforeDeafen = false;
   let share: { preset: ScreenPreset } | null = null;
   let speakTimer: ReturnType<typeof setInterval> | undefined;
-  let frameTimer: ReturnType<typeof setInterval> | undefined;
   let joinTimer: ReturnType<typeof setTimeout> | undefined;
-  let frameNo = 0;
-  let canvas: HTMLCanvasElement | undefined;
 
   const emitState = (s: RoomState) => handlers.state.forEach((cb) => cb({ ...s }));
   const emitParticipants = () => {
@@ -112,52 +109,57 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
     if (changed) emitParticipants();
   }
 
-  function drawFrame(sharer: Participant): ScreenFrame | null {
-    canvas ??= document.createElement('canvas');
-    const [w, h] = sharer.isLocal && share ? PRESET_SIZE[share.preset] : PRESET_SIZE['720p30'];
-    // Frames de teste menores para não pesar no navegador; o tamanho lógico vai no payload.
-    canvas.width = 480;
-    canvas.height = Math.round((480 * h) / w);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    const bars = ['#e9f3ef', '#f3e37c', '#8fe3f0', '#7fe0be', '#d6b8ff', '#ff9fb2', '#9fc2ff'];
-    const bw = canvas.width / bars.length;
-    bars.forEach((c, i) => {
-      ctx.fillStyle = c;
-      ctx.fillRect(i * bw, 0, bw + 1, canvas!.height);
-    });
-    const x = ((frameNo * 6) % (canvas.width + 80)) - 40;
-    ctx.fillStyle = '#0f1a1e';
-    ctx.fillRect(x, canvas.height * 0.62, 40, 40);
-    ctx.font = '600 22px sans-serif';
-    ctx.fillRect(0, 0, canvas.width, 40);
-    ctx.fillStyle = '#ffb547';
-    ctx.fillText(`${sharer.name} · quadro ${frameNo}`, 14, 28);
-    const jpegBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1] ?? '';
-    return { participantId: sharer.id, width: w, height: h, jpegBase64 };
-  }
-
-  function syncFrameTimer() {
-    const sharing = participants.some((p) => p.sharingScreen);
-    if (!frames || !sharing || !connected) {
-      clearInterval(frameTimer);
-      frameTimer = undefined;
-      return;
-    }
-    frameTimer ??= setInterval(() => {
-      frameNo++;
-      for (const p of participants.filter((q) => q.sharingScreen)) {
-        const frame = drawFrame(p);
-        if (frame) handlers.frame.forEach((cb) => cb(frame));
-      }
-    }, 1000 / 15);
-  }
-
   function stopTimers() {
     clearInterval(speakTimer);
-    clearInterval(frameTimer);
     clearTimeout(joinTimer);
-    speakTimer = frameTimer = joinTimer = undefined;
+    speakTimer = joinTimer = undefined;
+  }
+
+  function videoSession(): VideoSession {
+    return {
+      watch(id, el, onUpdate) {
+        let frameNo = 0;
+        let timer: ReturnType<typeof setInterval> | undefined;
+        const sharer = () => participants.find((p) => p.id === id && p.sharingScreen);
+        const size = () => {
+          const [w, h, fps] = sharer()?.isLocal && share ? PRESET_SIZE[share.preset] : PRESET_SIZE['720p30'];
+          return { width: w, height: h, fps, bitrateKbps: fps * 60 };
+        };
+        const canvas = frames ? document.createElement('canvas') : undefined;
+        if (canvas) {
+          canvas.width = 480;
+          canvas.height = 270;
+          el.srcObject = canvas.captureStream(30);
+          void el.play().catch(() => {});
+        }
+        const draw = () => {
+          const ctx = canvas?.getContext('2d');
+          if (!canvas || !ctx) return;
+          const bars = ['#e9f3ef', '#f3e37c', '#8fe3f0', '#7fe0be', '#d6b8ff', '#ff9fb2', '#9fc2ff'];
+          const bw = canvas.width / bars.length;
+          bars.forEach((c, i) => {
+            ctx.fillStyle = c;
+            ctx.fillRect(i * bw, 0, bw + 1, canvas.height);
+          });
+          ctx.fillStyle = '#0f1a1e';
+          ctx.fillRect(((frameNo * 6) % (canvas.width + 80)) - 40, canvas.height * 0.62, 40, 40);
+        };
+        const tick = () => {
+          frameNo++;
+          const update: VideoUpdate = sharer() ? { status: 'playing', stats: size() } : { status: 'waiting' };
+          if (update.status === 'playing') draw();
+          onUpdate(update);
+        };
+        onUpdate({ status: 'connecting' });
+        timer = setInterval(tick, 1000 / 30);
+        return () => {
+          clearInterval(timer);
+          timer = undefined;
+          if (canvas) el.srcObject = null;
+        };
+      },
+      close() {},
+    };
   }
 
   const subscribe =
@@ -201,7 +203,6 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
       emitState({ status: 'connected' });
       emitParticipants();
       if (autoSpeak && speakTickMs > 0) speakTimer = setInterval(tickSpeaking, speakTickMs);
-      syncFrameTimer();
     },
 
     async leaveRoom() {
@@ -249,7 +250,6 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
       share = { preset };
       update(me.id, { sharingScreen: true });
       emitParticipants();
-      syncFrameTimer();
     },
 
     async stopScreenShare() {
@@ -257,11 +257,10 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
       share = null;
       update(me.id, { sharingScreen: false });
       emitParticipants();
-      syncFrameTimer();
     },
 
     onRoomState: subscribe('state'),
     onParticipants: subscribe('participants'),
-    onScreenFrame: subscribe('frame'),
+    openVideo: async () => videoSession(),
   };
 }

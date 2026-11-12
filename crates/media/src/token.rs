@@ -21,6 +21,7 @@ impl Default for HttpTokenProvider {
 struct TokenRequest<'a> {
     room: &'a str,
     name: &'a str,
+    viewer: bool,
 }
 
 /// Maps what users type (`ws://host:7881`, `host:7881/`) to the token endpoint URL.
@@ -47,6 +48,39 @@ impl HttpTokenProvider {
             .unwrap_or_default();
         Self { client }
     }
+
+    /// Subscribe-only credentials for the WebView video viewer.
+    pub async fn fetch_viewer_token(
+        &self,
+        server_url: &str,
+        room: &str,
+        name: &str,
+    ) -> Result<Credentials, BoxError> {
+        self.request(server_url, room, name, true).await
+    }
+
+    async fn request(
+        &self,
+        server_url: &str,
+        room: &str,
+        name: &str,
+        viewer: bool,
+    ) -> Result<Credentials, BoxError> {
+        let endpoint = token_endpoint(server_url);
+        let res = self
+            .client
+            .post(&endpoint)
+            .json(&TokenRequest { room, name, viewer })
+            .send()
+            .await
+            .map_err(|e| format!("token-server inacessível em {endpoint}: {e}"))?;
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            return Err(format!("token-server respondeu {status}: {body}").into());
+        }
+        Ok(res.json::<Credentials>().await?)
+    }
 }
 
 #[async_trait]
@@ -57,20 +91,7 @@ impl TokenProvider for HttpTokenProvider {
         room: &str,
         name: &str,
     ) -> Result<Credentials, BoxError> {
-        let endpoint = token_endpoint(server_url);
-        let res = self
-            .client
-            .post(&endpoint)
-            .json(&TokenRequest { room, name })
-            .send()
-            .await
-            .map_err(|e| format!("token-server inacessível em {endpoint}: {e}"))?;
-        let status = res.status();
-        if !status.is_success() {
-            let body = res.text().await.unwrap_or_default();
-            return Err(format!("token-server respondeu {status}: {body}").into());
-        }
-        Ok(res.json::<Credentials>().await?)
+        self.request(server_url, room, name, false).await
     }
 }
 

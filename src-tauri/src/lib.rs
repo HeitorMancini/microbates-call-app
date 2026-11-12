@@ -8,12 +8,14 @@ pub mod room;
 use std::sync::Arc;
 
 use sheeshcord_core::{AudioSource, Dependencies, ScreenSource as ScreenCapture};
-use sheeshcord_media::{FakeAudio, FakeScreen, HttpTokenProvider, LiveKitTransport, MediaHub};
+use sheeshcord_media::{
+    FakeAudio, FakeScreen, HttpTokenProvider, LiveKitTransport, MediaHub, TransportOptions,
+};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use model::{
-    AudioDevices, DeviceKind, Participant, RoomState, ScreenFrame, ScreenPreset, ScreenSource,
-    EVENT_PARTICIPANTS, EVENT_SCREEN_FRAME, EVENT_STATE,
+    AudioDevices, DeviceKind, Participant, RoomState, ScreenPreset, ScreenSource,
+    ViewerCredentials, EVENT_PARTICIPANTS, EVENT_STATE,
 };
 use room::{EventSink, RoomError, RoomService};
 
@@ -32,12 +34,6 @@ impl EventSink for TauriSink {
     fn participants(&self, participants: &[Participant]) {
         if let Err(err) = self.0.emit(EVENT_PARTICIPANTS, participants) {
             tracing::warn!(%err, "falha ao emitir {EVENT_PARTICIPANTS}");
-        }
-    }
-
-    fn screen_frame(&self, frame: &ScreenFrame) {
-        if let Err(err) = self.0.emit(EVENT_SCREEN_FRAME, frame) {
-            tracing::warn!(%err, "falha ao emitir {EVENT_SCREEN_FRAME}");
         }
     }
 }
@@ -63,7 +59,10 @@ pub fn media_dependencies(hub: &MediaHub, fake: bool) -> Dependencies {
     };
     Dependencies {
         tokens: Arc::new(HttpTokenProvider::new()),
-        transport: Arc::new(LiveKitTransport::new(hub.clone())),
+        transport: Arc::new(LiveKitTransport::with_options(
+            hub.clone(),
+            TransportOptions::default(),
+        )),
         audio,
         screen,
     }
@@ -138,6 +137,22 @@ async fn stop_screen_share(svc: State<'_, RoomService>) -> Result<(), RoomError>
     svc.stop_screen_share().await
 }
 
+#[tauri::command]
+async fn viewer_credentials(
+    svc: State<'_, RoomService>,
+    tokens: State<'_, HttpTokenProvider>,
+) -> Result<ViewerCredentials, RoomError> {
+    let joined = svc.joined()?;
+    let creds = tokens
+        .fetch_viewer_token(&joined.server_url, &joined.room, &joined.name)
+        .await
+        .map_err(|e| RoomError::Token(e.to_string()))?;
+    Ok(ViewerCredentials {
+        url: creds.url,
+        token: creds.token,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -146,10 +161,10 @@ pub fn run() {
             let hub = MediaHub::default();
             let deps = media_dependencies(&hub, fake_media_enabled());
             // O controlador da sala cria tarefas Tokio: precisa do runtime do Tauri.
-            let service = tauri::async_runtime::block_on(async move {
-                RoomService::with_previews(deps, &hub, sink)
-            });
+            let service =
+                tauri::async_runtime::block_on(async move { RoomService::new(deps, sink) });
             app.manage(service);
+            app.manage(HttpTokenProvider::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -162,6 +177,7 @@ pub fn run() {
             list_screen_sources,
             start_screen_share,
             stop_screen_share,
+            viewer_credentials,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Sheeshcord");

@@ -6,3 +6,5 @@ ui/test-results
 src-tauri/gen
 .env
 *.log
+
+/dist/

@@ -19,7 +19,7 @@ App de voz + compartilhamento de tela (sem chat) para ~7 amigos via Radmin VPN. 
 ## Eventos (Rust -> frontend) — `listen`
 - `room://state` -> `{ status: "disconnected" | "connecting" | "connected" | "reconnecting" | "error", error?: string }`
 - `room://participants` -> `Participant[]` com `{ id, name, muted, speaking, sharingScreen, isLocal }`
-- `room://screen-frame` -> `{ participantId, width, height, jpegBase64 }` (spike; pode virar janela nativa/wgpu)
+- Vídeo: comando `viewer_credentials` -> `{ url, token }` (token `viewer~`, só assina); a UI conecta com `livekit-client` e exibe num `<video>`. Não há evento de frames.
 
 ## Núcleo Rust
 - `crates/core`: máquina de estados da sala, **independente de UI e de LiveKit**, com traits `Transport`, `AudioSource`, `ScreenSource` mockáveis (`async_trait`). Sem dependências de Tauri.

@@ -36,7 +36,8 @@ um dos amigos (o *host*) roda o servidor de mídia no próprio PC.
 | `.github/workflows/ci.yml`  | CI no `windows-latest`                                                   |
 
 Fluxo: UI → `join_room` → core pede token ao token-server → conecta no LiveKit →
-eventos (`room://state`, `room://participants`, `room://screen-frame`) voltam para a UI.
+eventos (`room://state`, `room://participants`) voltam para a UI. O vídeo da tela é recebido
+direto no WebView por `livekit-client` (`viewer_credentials` → token `viewer~`), num `<video>`.
 
 ## Requisitos (desenvolvimento)
 
@@ -133,8 +134,8 @@ limite configurado não for atingido. Perda/latência podem ser simuladas com
   (`devkey`/`devsecret…`) — **não exponha o servidor na internet** sem trocar as chaves e configurar TLS.
 - O SDK Rust do LiveKit tem menos recursos que o JS (encode por hardware/simulcast
   dependem da versão do libwebrtc embutido).
-- A exibição da tela recebida passa por quadros JPEG enviados ao WebView
-  (`room://screen-frame`), o que custa CPU em 1080p60.
+- A tela é enviada em H.264 (encoder por hardware quando disponível, fallback VP8) e
+  decodificada pelo WebView; o desempenho real em 1080p60 depende da GPU do host.
 - Upload do host e latência do Radmin limitam a qualidade com muitos espectadores.
 - Captura real de áudio/tela não roda no CI; lá são usadas fontes sintéticas e a UI em modo mock.
 - O teste de carga roda todos os clientes numa só máquina (mede o SFU/link local, não o upload real do host).

@@ -42,11 +42,31 @@ export const SCREEN_PRESETS: readonly { id: ScreenPreset; label: string; hint: s
   { id: '720p30', label: '720p · 30 fps', hint: 'Conexão fraca ou muita gente vendo' },
 ];
 
-export interface ScreenFrame {
-  participantId: string;
+export type VideoStatus = 'connecting' | 'waiting' | 'playing' | 'error';
+
+export interface VideoStats {
   width: number;
   height: number;
-  jpegBase64: string;
+  fps: number;
+  bitrateKbps: number;
+}
+
+export interface VideoUpdate {
+  status: VideoStatus;
+  message?: string;
+  stats?: VideoStats;
+}
+
+/** Conexão somente-assinatura que entrega a tela de quem compartilha direto num <video>. */
+export interface VideoSession {
+  /** Liga a tela de `participantId` ao elemento; devolve a função que desliga. */
+  watch(participantId: string, el: HTMLVideoElement, onUpdate: (u: VideoUpdate) => void): () => void;
+  close(): void;
+}
+
+export interface ViewerCredentials {
+  url: string;
+  token: string;
 }
 
 export interface JoinParams {
@@ -58,7 +78,6 @@ export interface JoinParams {
 export const EVENTS = {
   state: 'room://state',
   participants: 'room://participants',
-  screenFrame: 'room://screen-frame',
 } as const;
 
 export type Unlisten = () => void;
@@ -77,5 +96,6 @@ export interface Backend {
   stopScreenShare(): Promise<void>;
   onRoomState(cb: (state: RoomState) => void): Promise<Unlisten>;
   onParticipants(cb: (participants: Participant[]) => void): Promise<Unlisten>;
-  onScreenFrame(cb: (frame: ScreenFrame) => void): Promise<Unlisten>;
+  /** Abre o canal de vídeo (decodificado pela WebView, com aceleração de hardware). */
+  openVideo(): Promise<VideoSession>;
 }

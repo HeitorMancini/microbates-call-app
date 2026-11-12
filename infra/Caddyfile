@@ -1,0 +1,15 @@
+# Requer um Caddy com o plugin DNS do seu provedor (DNS-01), pois o IP é privado (Radmin).
+# Ajuste "dns" conforme o plugin disponível para o Hostinger.
+live.microbates.com {
+	tls {
+		dns hostinger {env.HOSTINGER_API_TOKEN}
+	}
+	reverse_proxy 127.0.0.1:7881
+}
+
+live.microbates.com:7443 {
+	tls {
+		dns hostinger {env.HOSTINGER_API_TOKEN}
+	}
+	reverse_proxy 127.0.0.1:7880
+}

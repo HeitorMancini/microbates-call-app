@@ -4,7 +4,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use livekit::options::{TrackPublishOptions, VideoCodec, VideoEncoding};
+use livekit::options::{
+    DegradationPreference, TrackPublishOptions, VideoCodec, VideoEncoderBackend, VideoEncoding,
+};
 use livekit::prelude::*;
 use livekit::webrtc::audio_source::native::NativeAudioSource;
 use livekit::webrtc::audio_source::{AudioSourceOptions, RtcAudioSource};
@@ -22,19 +24,28 @@ use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 
 use crate::hub::{MediaHub, SAMPLE_RATE};
 
+/// Identity prefix of the WebView's subscribe-only video client (must match the
+/// token-server's `VIEWER_IDENTITY_PREFIX`); never shown in the roster.
+pub const VIEWER_IDENTITY_PREFIX: &str = "viewer~";
+
 /// Encoder settings for the screen-share track.
 ///
-/// VP8 is the default because every libwebrtc build ships a software encoder for it;
-/// H264 may pick a hardware encoder (`VideoEncoderBackend::Auto`) where available.
+/// H264 is the default: with `VideoEncoderBackend::Auto` libwebrtc uses a hardware encoder
+/// (NVENC/QSV/AMF) where available and OpenH264 otherwise, and every WebView decodes it in
+/// hardware. VP8 stays available as a software-only fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransportOptions {
     pub screen_codec: VideoCodec,
+    /// Decode remote video natively into the hub's RGBA previews. The app leaves this off
+    /// because the WebView renders video itself (hardware decode, no JPEG/IPC round trip).
+    pub subscribe_video: bool,
 }
 
 impl Default for TransportOptions {
     fn default() -> Self {
         Self {
-            screen_codec: VideoCodec::VP8,
+            screen_codec: VideoCodec::H264,
+            subscribe_video: false,
         }
     }
 }
@@ -42,9 +53,9 @@ impl Default for TransportOptions {
 /// Upper bound for the screen-share bitrate of each preset (bits per second).
 pub fn preset_max_bitrate(preset: ScreenPreset) -> u64 {
     match preset {
-        ScreenPreset::P1080Fps60 => 6_000_000,
-        ScreenPreset::P1080Fps30 => 4_000_000,
-        ScreenPreset::P720Fps30 => 2_500_000,
+        ScreenPreset::P1080Fps60 => 9_000_000,
+        ScreenPreset::P1080Fps30 => 6_000_000,
+        ScreenPreset::P720Fps30 => 3_000_000,
     }
 }
 
@@ -112,6 +123,16 @@ fn identity(p: &RemoteParticipant) -> String {
     p.identity().to_string()
 }
 
+/// The WebView's subscribe-only video client; never shown in the roster.
+fn is_viewer(p: &RemoteParticipant) -> bool {
+    p.identity().as_str().starts_with(VIEWER_IDENTITY_PREFIX)
+}
+
+fn subscribe_wanted(publication: &RemoteTrackPublication, subscribe_video: bool) {
+    let wanted = subscribe_video || publication.kind() == TrackKind::Audio;
+    publication.set_subscribed(wanted);
+}
+
 fn has_source(p: &RemoteParticipant, source: TrackSource, unmuted_only: bool) -> bool {
     p.track_publications().values().any(|publication| {
         publication.source() == source && !(unmuted_only && publication.is_muted())
@@ -137,7 +158,7 @@ impl Transport for LiveKitTransport {
         }
 
         let mut options = RoomOptions::default();
-        options.auto_subscribe = true;
+        options.auto_subscribe = self.options.subscribe_video;
         options.dynacast = true;
         let (room, room_events) = Room::connect(url, token, options).await?;
         let local = room.local_participant();
@@ -192,9 +213,26 @@ impl Transport for LiveKitTransport {
         self.hub.set_mic_sink(Some(mic_tx));
         self.hub.set_local_identity(Some(local_identity.clone()));
 
-        let participants = room.remote_participants().values().map(describe).collect();
+        let remotes = room.remote_participants();
+        let participants = remotes
+            .values()
+            .filter(|p| !is_viewer(p))
+            .map(describe)
+            .collect();
+        if !self.options.subscribe_video {
+            for p in remotes.values().filter(|p| !is_viewer(p)) {
+                for publication in p.track_publications().values() {
+                    subscribe_wanted(publication, false);
+                }
+            }
+        }
         let (tx, rx) = mpsc::channel(256);
-        let events = tokio::spawn(pump_events(room_events, tx, self.hub.clone()));
+        let events = tokio::spawn(pump_events(
+            room_events,
+            tx,
+            self.hub.clone(),
+            self.options.subscribe_video,
+        ));
 
         *guard = Some(Active {
             room,
@@ -244,23 +282,36 @@ impl Transport for LiveKitTransport {
         let source = NativeVideoSource::new(VideoResolution { width, height }, true);
         let track =
             LocalVideoTrack::create_video_track("screen", RtcVideoSource::Native(source.clone()));
-        let publication = active
-            .room
-            .local_participant()
+        let publish = |codec: VideoCodec| TrackPublishOptions {
+            source: TrackSource::Screenshare,
+            video_codec: codec,
+            simulcast: false,
+            video_encoding: Some(VideoEncoding {
+                max_bitrate: preset_max_bitrate(preset),
+                max_framerate: f64::from(preset.fps()),
+            }),
+            video_encoder: VideoEncoderBackend::Auto,
+            // Games: keep the frame rate smooth and let the resolution give way first.
+            degradation_preference: Some(DegradationPreference::MaintainFramerate),
+            ..Default::default()
+        };
+        let local = active.room.local_participant();
+        let publication = match local
             .publish_track(
-                LocalTrack::Video(track),
-                TrackPublishOptions {
-                    source: TrackSource::Screenshare,
-                    video_codec: self.options.screen_codec,
-                    simulcast: false,
-                    video_encoding: Some(VideoEncoding {
-                        max_bitrate: preset_max_bitrate(preset),
-                        max_framerate: f64::from(preset.fps()),
-                    }),
-                    ..Default::default()
-                },
+                LocalTrack::Video(track.clone()),
+                publish(self.options.screen_codec),
             )
-            .await?;
+            .await
+        {
+            Ok(publication) => publication,
+            Err(e) if self.options.screen_codec != VideoCodec::VP8 => {
+                tracing::warn!(error = %e, "screen publish failed; retrying with VP8");
+                local
+                    .publish_track(LocalTrack::Video(track), publish(VideoCodec::VP8))
+                    .await?
+            }
+            Err(e) => return Err(e.into()),
+        };
         self.hub.set_screen_sink(Some((source, width, height)));
         active.screen = Some(ScreenTrack { publication });
         Ok(())
@@ -287,11 +338,18 @@ async fn pump_events(
     mut room_events: mpsc::UnboundedReceiver<RoomEvent>,
     tx: mpsc::Sender<TransportEvent>,
     hub: MediaHub,
+    subscribe_video: bool,
 ) {
     let mut readers = JoinSet::new();
     let mut by_track: HashMap<TrackSid, AbortHandle> = HashMap::new();
     while let Some(event) = room_events.recv().await {
         let out = match event {
+            RoomEvent::ParticipantConnected(p) | RoomEvent::ParticipantDisconnected(p)
+                if is_viewer(&p) =>
+            {
+                None
+            }
+            RoomEvent::TrackPublished { participant, .. } if is_viewer(&participant) => None,
             RoomEvent::ParticipantConnected(p) => {
                 Some(TransportEvent::ParticipantJoined(describe(&p)))
             }
@@ -302,17 +360,22 @@ async fn pump_events(
             RoomEvent::TrackPublished {
                 publication,
                 participant,
-            } => match publication.source() {
-                TrackSource::Microphone => Some(TransportEvent::MuteChanged {
-                    id: identity(&participant),
-                    muted: !has_source(&participant, TrackSource::Microphone, true),
-                }),
-                TrackSource::Screenshare => Some(TransportEvent::ScreenShareChanged {
-                    id: identity(&participant),
-                    sharing: true,
-                }),
-                _ => None,
-            },
+            } => {
+                if !subscribe_video {
+                    subscribe_wanted(&publication, false);
+                }
+                match publication.source() {
+                    TrackSource::Microphone => Some(TransportEvent::MuteChanged {
+                        id: identity(&participant),
+                        muted: !has_source(&participant, TrackSource::Microphone, true),
+                    }),
+                    TrackSource::Screenshare => Some(TransportEvent::ScreenShareChanged {
+                        id: identity(&participant),
+                        sharing: true,
+                    }),
+                    _ => None,
+                }
+            }
             RoomEvent::TrackUnpublished {
                 publication,
                 participant,

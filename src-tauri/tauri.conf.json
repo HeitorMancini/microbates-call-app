@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Sheeshcord",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.sheeshcord.app",
   "build": {
     "devUrl": "http://localhost:5173",
@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost",
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost ws: wss: http: https:",
       "capabilities": ["default"]
     }
   },

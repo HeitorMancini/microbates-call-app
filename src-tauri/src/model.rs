@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 pub const EVENT_STATE: &str = "room://state";
 pub const EVENT_PARTICIPANTS: &str = "room://participants";
-pub const EVENT_SCREEN_FRAME: &str = "room://screen-frame";
 
 // Os tipos compartilhados vêm de `sheeshcord_core` (mesma serialização do contrato).
 pub use sheeshcord_core::{
@@ -12,13 +11,12 @@ pub use sheeshcord_core::{
     ScreenPreset, ScreenSourceInfo as ScreenSource, ScreenSourceKind,
 };
 
+/// Credenciais somente-assinatura para o visualizador de vídeo da WebView (LiveKit JS).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ScreenFrame {
-    pub participant_id: String,
-    pub width: u32,
-    pub height: u32,
-    pub jpeg_base64: String,
+pub struct ViewerCredentials {
+    pub url: String,
+    pub token: String,
 }
 
 #[cfg(test)]

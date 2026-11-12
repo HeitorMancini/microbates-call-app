@@ -8,7 +8,8 @@ use sheeshcord_core::{
     AudioSource, ScreenPreset, ScreenSource, Session, TokenProvider, Transport, TransportEvent,
 };
 use sheeshcord_media::{
-    FakeAudio, FakeScreen, HttpTokenProvider, LiveKitTransport, MediaHub, FAKE_MONITOR_ID,
+    FakeAudio, FakeScreen, HttpTokenProvider, LiveKitTransport, MediaHub, TransportOptions,
+    FAKE_MONITOR_ID,
 };
 
 struct Client {
@@ -25,7 +26,13 @@ async fn join(tokens: &HttpTokenProvider, token_url: &str, name: &str) -> Client
         .await
         .expect("token");
     let hub = MediaHub::default();
-    let transport = LiveKitTransport::new(hub.clone());
+    let transport = LiveKitTransport::with_options(
+        hub.clone(),
+        TransportOptions {
+            subscribe_video: true,
+            ..Default::default()
+        },
+    );
     let session = transport
         .connect(&creds.url, &creds.token)
         .await
