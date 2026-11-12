@@ -1,0 +1,116 @@
+name: Deploy (Oracle Cloud)
+
+# Constrói a imagem ARM64 do token-server, publica no GHCR e atualiza a VM via SSH.
+# Configuração (Settings > Secrets and variables > Actions):
+#   variables: ORACLE_HOST (IP ou live.microbates.com), ORACLE_USER (ex.: ubuntu)
+#   secret:    ORACLE_SSH_KEY (chave privada com acesso à VM)
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/token-server/**"
+      - "Cargo.lock"
+      - "deploy/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/heitormancini/sheeshcord-token-server
+  DOMAIN: live.microbates.com
+
+jobs:
+  image:
+    name: Imagem token-server (arm64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/token-server/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Atualizar a VM
+    needs: image
+    if: vars.ORACLE_HOST != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    env:
+      HOST: ${{ vars.ORACLE_HOST }}
+      SSH_USER: ${{ vars.ORACLE_USER || 'ubuntu' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Chave SSH
+        env:
+          SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+
+      - name: Copiar arquivos de deploy
+        run: |
+          scp -i ~/.ssh/id_deploy deploy/docker-compose.yml deploy/Caddyfile deploy/livekit.yaml deploy/.env.example \
+            "$SSH_USER@$HOST:/opt/sheeshcord/"
+
+      - name: Login no GHCR (na VM)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/id_deploy "$SSH_USER@$HOST" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+
+      - name: docker compose up
+        env:
+          TAG: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$SSH_USER@$HOST" "TAG='$TAG' bash -s" <<'EOF'
+          set -euo pipefail
+          cd /opt/sheeshcord
+          trap 'docker logout ghcr.io >/dev/null' EXIT
+          if [ ! -f .env ]; then
+            echo "::error::/opt/sheeshcord/.env não existe. Crie a partir de .env.example." >&2
+            exit 1
+          fi
+          export TOKEN_SERVER_IMAGE="ghcr.io/heitormancini/sheeshcord-token-server:$TAG"
+          docker compose pull
+          docker compose up -d --remove-orphans
+          docker image prune -f
+          EOF
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "https://$DOMAIN/health"; then exit 0; fi
+            sleep 5
+          done
+          echo "::error::https://$DOMAIN/health não respondeu"
+          exit 1

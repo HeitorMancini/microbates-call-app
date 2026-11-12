@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Sheeshcord",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "com.sheeshcord.app",
   "build": {
     "devUrl": "http://localhost:5173",
@@ -32,7 +32,7 @@
     "publisher": "Sheeshcord",
     "category": "SocialNetworking",
     "shortDescription": "Voz e compartilhamento de tela para amigos",
-    "longDescription": "Sheeshcord: chamadas de voz e compartilhamento de tela em alta qualidade para grupos pequenos via LAN/Radmin VPN.",
+    "longDescription": "Sheeshcord: chamadas de voz e compartilhamento de tela em alta qualidade para grupos pequenos.",
     "copyright": "© 2026 Sheeshcord (MIT)",
     "icon": [
       "icons/32x32.png",

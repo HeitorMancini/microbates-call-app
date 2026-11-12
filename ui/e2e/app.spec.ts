@@ -21,8 +21,9 @@ test('tela de entrada é acessível e valida o formulário', async ({ page }) =>
   await expectNoA11yViolations(page);
 
   await page.getByRole('button', { name: 'Entrar na sala' }).click();
-  await expect(page.getByLabel('Servidor', { exact: true })).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.getByLabel('Servidor', { exact: true })).toBeFocused();
+  await expect(page.getByLabel('Servidor', { exact: true })).toHaveValue('https://live.microbates.com');
+  await expect(page.getByLabel('Sala', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByLabel('Sala', { exact: true })).toBeFocused();
   await expect(page.getByText('Informe o nome da sala.')).toBeVisible();
   await expectNoA11yViolations(page);
 });

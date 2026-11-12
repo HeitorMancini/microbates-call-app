@@ -1,27 +1,30 @@
 <script lang="ts">
   import type { RoomStore } from '../lib/room.svelte';
   import { hasErrors, MAX_FIELD_LEN, validateJoin, type JoinErrors } from '../lib/validation';
-  import type { JoinParams } from '../lib/types';
+  import { DEFAULT_SERVER_URL, type JoinParams } from '../lib/types';
   import Icon from './Icon.svelte';
 
   const STORAGE_KEY = 'sheeshcord:entrada';
 
+  type Form = Required<JoinParams>;
+
   let { store }: { store: RoomStore } = $props();
 
-  function loadSaved(): JoinParams {
+  function loadSaved(): Form {
+    const empty: Form = { serverUrl: DEFAULT_SERVER_URL, room: '', name: '', password: '' };
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return { serverUrl: '', room: '', name: '', ...JSON.parse(raw) };
+      if (raw) return { ...empty, ...JSON.parse(raw) };
     } catch {
-      // Sem armazenamento: começa vazio.
+      // Sem armazenamento: começa com os padrões.
     }
-    return { serverUrl: '', room: '', name: '' };
+    return empty;
   }
 
-  let form = $state<JoinParams>(loadSaved());
+  let form = $state<Form>(loadSaved());
   let errors = $state<JoinErrors>({});
   let submitted = $state(false);
-  let fields = $state<Partial<Record<keyof JoinParams, HTMLInputElement>>>({});
+  let fields = $state<Partial<Record<keyof Form, HTMLInputElement>>>({});
 
   // Depois da primeira tentativa, revalida enquanto a pessoa corrige.
   $effect(() => {
@@ -47,23 +50,39 @@
     await store.join(form);
   }
 
-  const inputs: { key: keyof JoinParams; label: string; placeholder: string; autocomplete: string; hint?: string }[] = [
+  const inputs: {
+    key: keyof Form;
+    label: string;
+    placeholder: string;
+    autocomplete: string;
+    type?: 'text' | 'password';
+    required?: boolean;
+    hint?: string;
+  }[] = [
     {
       key: 'serverUrl',
       label: 'Servidor',
-      placeholder: 'ws://26.1.2.3:7880',
+      placeholder: DEFAULT_SERVER_URL,
       autocomplete: 'url',
-      hint: 'O IP de quem hospeda, na Radmin VPN.',
+      required: true,
     },
-    { key: 'room', label: 'Sala', placeholder: 'resenha', autocomplete: 'off' },
-    { key: 'name', label: 'Seu nome', placeholder: 'Como a turma te chama', autocomplete: 'nickname' },
+    { key: 'room', label: 'Sala', placeholder: 'resenha', autocomplete: 'off', required: true },
+    { key: 'name', label: 'Seu nome', placeholder: 'Como a turma te chama', autocomplete: 'nickname', required: true },
+    {
+      key: 'password',
+      label: 'Senha do grupo',
+      placeholder: 'Combinada com a turma',
+      autocomplete: 'current-password',
+      type: 'password',
+      hint: 'Pedida pelo servidor para barrar estranhos.',
+    },
   ];
 </script>
 
 <main class="entrada">
   <section class="marca" aria-labelledby="titulo-app">
     <h1 id="titulo-app">Sheeshcord</h1>
-    <p class="lema">Voz e tela para a sua turma, sem sair da Radmin.</p>
+    <p class="lema">Voz e tela em alta qualidade para a sua turma.</p>
     <div class="vu" aria-hidden="true">
       {#each [0.35, 0.62, 0.48, 0.9, 0.55, 0.74, 0.3] as h, i (i)}
         <span style="--i: {i}; --h: {h}"></span>
@@ -75,7 +94,7 @@
     <h2 id="titulo-form">Entrar numa sala</h2>
 
     {#each inputs as input (input.key)}
-      {@const error = errors[input.key]}
+      {@const error = input.key === 'password' ? undefined : errors[input.key]}
       {@const describedBy = [error ? `${input.key}-erro` : '', input.hint ? `${input.key}-dica` : '']
         .filter(Boolean)
         .join(' ')}
@@ -86,16 +105,16 @@
           id="campo-{input.key}"
           class="campo"
           name={input.key}
-          type="text"
+          type={input.type ?? 'text'}
           inputmode={input.key === 'serverUrl' ? 'url' : undefined}
           spellcheck="false"
           autocomplete={input.autocomplete as AutoFill}
           placeholder={input.placeholder}
-          maxlength={input.key === 'serverUrl' ? undefined : MAX_FIELD_LEN + 16}
+          maxlength={input.key === 'serverUrl' || input.key === 'password' ? undefined : MAX_FIELD_LEN + 16}
           bind:value={form[input.key]}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={describedBy || undefined}
-          required
+          required={input.required}
         />
         {#if input.hint}
           <p class="dica" id="{input.key}-dica">{input.hint}</p>

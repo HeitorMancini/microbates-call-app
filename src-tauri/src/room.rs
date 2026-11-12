@@ -158,11 +158,13 @@ impl RoomService {
         server_url: &str,
         room: &str,
         name: &str,
+        password: &str,
     ) -> Result<(), RoomError> {
         let params = JoinParams {
             server_url: validate_server_url(server_url)?,
             room: validate_field("sala", room)?,
             name: validate_field("nome", name)?,
+            password: password.to_owned(),
         };
         tracing::info!(server_url = %params.server_url, room = %params.room, "entrando na sala");
         self.controller.join(params.clone()).await?;
@@ -371,7 +373,7 @@ mod tests {
     async fn joined() -> Fixture {
         let f = service();
         f.svc
-            .join_room("ws://26.1.2.3:7880", "galera", "Ana")
+            .join_room("ws://26.1.2.3:7880", "galera", "Ana", "")
             .await
             .unwrap();
         f.rec.take_when(connected).await;
@@ -381,7 +383,7 @@ mod tests {
     #[tokio::test]
     async fn join_emits_connecting_connected_and_local_participant() {
         let Fixture { svc, rec, .. } = service();
-        svc.join_room(" ws://26.1.2.3:7880 ", " galera ", " Ana ")
+        svc.join_room(" ws://26.1.2.3:7880 ", " galera ", " Ana ", "")
             .await
             .unwrap();
         let events = rec.take_when(connected).await;
@@ -407,35 +409,38 @@ mod tests {
     async fn join_validates_input() {
         let Fixture { svc, rec, .. } = service();
         assert_eq!(
-            svc.join_room("", "s", "n").await,
+            svc.join_room("", "s", "n", "").await,
             Err(RoomError::EmptyServerUrl)
         );
         assert_eq!(
-            svc.join_room("ftp://x", "s", "n").await,
+            svc.join_room("ftp://x", "s", "n", "").await,
             Err(RoomError::InvalidServerUrl)
         );
         assert_eq!(
-            svc.join_room("ws://", "s", "n").await,
+            svc.join_room("ws://", "s", "n", "").await,
             Err(RoomError::InvalidServerUrl)
         );
         assert_eq!(
-            svc.join_room("ws://h", "  ", "n").await,
+            svc.join_room("ws://h", "  ", "n", "").await,
             Err(RoomError::EmptyField("sala"))
         );
         let long = "x".repeat(65);
         assert_eq!(
-            svc.join_room("ws://h", "s", &long).await,
+            svc.join_room("ws://h", "s", &long, "").await,
             Err(RoomError::FieldTooLong("nome"))
         );
         assert!(rec.take_when(|_| false).await.is_empty(), "nada emitido");
-        assert!(svc.join_room("ws://h", "s", &"x".repeat(64)).await.is_ok());
+        assert!(svc
+            .join_room("ws://h", "s", &"x".repeat(64), "")
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
     async fn join_twice_is_rejected() {
         let f = joined().await;
         assert_eq!(
-            f.svc.join_room("ws://h", "s", "n").await,
+            f.svc.join_room("ws://h", "s", "n", "").await,
             Err(RoomError::AlreadyConnected)
         );
     }
@@ -444,7 +449,7 @@ mod tests {
     async fn token_failure_is_reported_in_state_and_result() {
         let f = service();
         f.tokens.set_error(Some("sala lotada"));
-        let err = f.svc.join_room("ws://h", "s", "n").await.unwrap_err();
+        let err = f.svc.join_room("ws://h", "s", "n", "").await.unwrap_err();
         assert!(matches!(&err, RoomError::Token(m) if m.contains("sala lotada")));
         let events = f
             .rec
@@ -457,7 +462,7 @@ mod tests {
             .iter()
             .any(|e| matches!(e, Event::State(s) if s.status == ConnectionStatus::Error)));
         f.tokens.set_error(None);
-        assert!(f.svc.join_room("ws://h", "s", "n").await.is_ok());
+        assert!(f.svc.join_room("ws://h", "s", "n", "").await.is_ok());
     }
 
     #[tokio::test]
@@ -469,7 +474,7 @@ mod tests {
         assert!(events.contains(&disconnected));
         assert!(events.contains(&Event::Participants(vec![])));
         assert_eq!(f.svc.set_muted(true).await, Err(RoomError::NotConnected));
-        assert!(f.svc.join_room("ws://h", "s", "n").await.is_ok());
+        assert!(f.svc.join_room("ws://h", "s", "n", "").await.is_ok());
     }
 
     #[tokio::test]

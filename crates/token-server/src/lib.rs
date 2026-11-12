@@ -3,13 +3,17 @@
 pub mod config;
 pub mod token;
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use axum::extract::rejection::JsonRejection;
-use axum::extract::State;
-use axum::http::StatusCode;
+use axum::extract::{ConnectInfo, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::Extension;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
@@ -19,6 +23,10 @@ use tower_http::trace::TraceLayer;
 pub use config::{Config, ConfigError};
 pub use token::{Claims, VideoGrant};
 
+/// Wrong-password attempts allowed per client within [`FAILURE_WINDOW`].
+pub const MAX_FAILURES: u32 = 10;
+pub const FAILURE_WINDOW: Duration = Duration::from_secs(15 * 60);
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct TokenRequest {
     pub room: String,
@@ -26,6 +34,9 @@ pub struct TokenRequest {
     /// Subscribe-only token for the WebView video viewer.
     #[serde(default)]
     pub viewer: bool,
+    /// Shared group password (checked when the server has `ACCESS_PASSWORD`).
+    #[serde(default)]
+    pub password: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -49,13 +60,59 @@ fn error(status: StatusCode, message: impl Into<String>) -> Response {
         .into_response()
 }
 
+struct AppState {
+    config: Config,
+    failures: Mutex<HashMap<String, (u32, Instant)>>,
+}
+
+impl AppState {
+    fn is_blocked(&self, client: &str) -> bool {
+        let mut map = self.failures.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        map.retain(|_, (_, since)| now.duration_since(*since) < FAILURE_WINDOW);
+        map.get(client).is_some_and(|(n, _)| *n >= MAX_FAILURES)
+    }
+
+    fn record_failure(&self, client: &str) {
+        let mut map = self.failures.lock().unwrap_or_else(|e| e.into_inner());
+        map.entry(client.to_owned())
+            .or_insert((0, Instant::now()))
+            .0 += 1;
+    }
+}
+
+/// Compares in constant time with respect to the content of `a`/`b` (length may leak).
+fn secure_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// Client key for rate limiting. Behind the reverse proxy (only exposed through Caddy)
+/// the last `X-Forwarded-For` entry is the address the proxy saw.
+fn client_key(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.rsplit(',').next())
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty())
+        .or_else(|| peer.map(|p| p.ip().to_string()))
+        .unwrap_or_else(|| "unknown".to_owned())
+}
+
 pub fn router(config: Config) -> Router {
+    let state = Arc::new(AppState {
+        config,
+        failures: Mutex::new(HashMap::new()),
+    });
     Router::new()
         .route("/health", get(health))
         .route("/token", post(issue_token))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(Arc::new(config))
+        .with_state(state)
 }
 
 /// Serves the router on an already bound listener until `shutdown` resolves.
@@ -64,9 +121,12 @@ pub async fn serve(
     config: Config,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    axum::serve(listener, router(config))
-        .with_graceful_shutdown(shutdown)
-        .await
+    axum::serve(
+        listener,
+        router(config).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown)
+    .await
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -74,9 +134,12 @@ async fn health() -> Json<serde_json::Value> {
 }
 
 async fn issue_token(
-    State(config): State<Arc<Config>>,
+    State(state): State<Arc<AppState>>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
     body: Result<Json<TokenRequest>, JsonRejection>,
 ) -> Response {
+    let config = &state.config;
     let Json(req) = match body {
         Ok(body) => body,
         Err(rejection) => return error(StatusCode::BAD_REQUEST, rejection.body_text()),
@@ -85,6 +148,22 @@ async fn issue_token(
         .and_then(|()| token::validate_field("name", &req.name))
     {
         return error(StatusCode::BAD_REQUEST, e.to_string());
+    }
+
+    if let Some(expected) = &config.access_password {
+        let client = client_key(&headers, peer.map(|Extension(ConnectInfo(addr))| addr));
+        if state.is_blocked(&client) {
+            tracing::warn!(%client, "too many wrong passwords");
+            return error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "too many wrong passwords, try again later",
+            );
+        }
+        if !secure_eq(req.password.as_bytes(), expected.as_bytes()) {
+            state.record_failure(&client);
+            tracing::warn!(%client, "wrong group password");
+            return error(StatusCode::UNAUTHORIZED, "wrong group password");
+        }
     }
 
     let claims = token::build_claims_for(

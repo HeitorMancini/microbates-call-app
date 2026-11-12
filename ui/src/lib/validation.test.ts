@@ -15,7 +15,7 @@ describe('validateJoin', () => {
   });
 
   it.each(['26.1.2.3:7880', 'ftp://x', 'ws://', 'ws:///x', 'ws://a b'])('rejeita servidor %s', (serverUrl) => {
-    expect(validateJoin({ ...ok, serverUrl }).serverUrl).toMatch(/ws:\/\//);
+    expect(validateJoin({ ...ok, serverUrl }).serverUrl).toMatch(/https:\/\/live\.microbates\.com/);
   });
 
   it('limita sala e nome a 64 caracteres (contando emoji como um)', () => {

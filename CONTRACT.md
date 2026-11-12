@@ -1,14 +1,14 @@
 # Contrato entre módulos (Sheeshcord)
 
-App de voz + compartilhamento de tela (sem chat) para ~7 amigos via Radmin VPN. Tauri 2 + Svelte 5 (UI) + núcleo Rust; mídia nativa (SDK Rust do LiveKit).
+App de voz + compartilhamento de tela (sem chat) para ~7 amigos, servidor LiveKit em `https://live.microbates.com` (Oracle Cloud). Tauri 2 + Svelte 5 (UI) + núcleo Rust; mídia nativa (SDK Rust do LiveKit).
 
-## token-server (HTTP, Axum, porta 7881)
+## token-server (HTTP, Axum, porta 7881; em produção 127.0.0.1:7890 atrás do Caddy)
 - `GET /health` -> `200 {"status":"ok"}`
-- `POST /token` body `{"room": string, "name": string}` -> `200 {"token": string, "url": string}`; `400` se `room`/`name` vazios ou > 64 chars; JWT LiveKit (HS256) com `video.roomJoin`, identity = name + sufixo único.
-- Config por env: `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_URL` (ex.: `ws://26.1.2.3:7880`), `TOKEN_SERVER_BIND` (padrão `0.0.0.0:7881`).
+- `POST /token` body `{"room": string, "name": string, "password"?: string, "viewer"?: bool}` -> `200 {"token": string, "url": string}`; `400` se `room`/`name` vazios ou > 64 chars; `401` se `ACCESS_PASSWORD` estiver definida e a senha não bater; `429` após 10 senhas erradas do mesmo IP em 15 min. JWT LiveKit (HS256) com `video.roomJoin`, identity = name + sufixo único.
+- Config por env: `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_URL` (ex.: `wss://live.microbates.com`), `ACCESS_PASSWORD` (senha do grupo; vazia = sem senha, só para dev), `TOKEN_SERVER_BIND` (padrão `0.0.0.0:7881`).
 
 ## Comandos Tauri (frontend -> Rust) — `invoke`
-- `join_room({ serverUrl: string, room: string, name: string })` -> `void`
+- `join_room({ serverUrl: string, room: string, name: string, password?: string })` -> `void`
 - `leave_room()` -> `void`
 - `set_muted({ muted: boolean })`, `set_deafened({ deafened: boolean })`
 - `list_audio_devices()` -> `{ inputs: Device[], outputs: Device[] }` (`Device = { id: string, name: string }`)

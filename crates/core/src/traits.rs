@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 
 use crate::types::{
-    AudioDevices, Credentials, DeviceKind, RemoteParticipant, ScreenPreset, ScreenSourceInfo,
+    AudioDevices, Credentials, DeviceKind, JoinParams, RemoteParticipant, ScreenPreset,
+    ScreenSourceInfo,
 };
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
@@ -10,12 +11,7 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 /// Obtains LiveKit credentials (normally via `POST {server_url}/token`).
 #[async_trait]
 pub trait TokenProvider: Send + Sync {
-    async fn fetch_token(
-        &self,
-        server_url: &str,
-        room: &str,
-        name: &str,
-    ) -> Result<Credentials, BoxError>;
+    async fn fetch_token(&self, params: &JoinParams) -> Result<Credentials, BoxError>;
 }
 
 /// Event pushed by a live [`Transport`] session.

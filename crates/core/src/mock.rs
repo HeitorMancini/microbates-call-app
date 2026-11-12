@@ -9,7 +9,7 @@ use crate::traits::{
     AudioSource, BoxError, ScreenSource, Session, TokenProvider, Transport, TransportEvent,
 };
 use crate::types::{
-    AudioDevices, Credentials, Device, DeviceKind, RemoteParticipant, ScreenPreset,
+    AudioDevices, Credentials, Device, DeviceKind, JoinParams, RemoteParticipant, ScreenPreset,
     ScreenSourceInfo, ScreenSourceKind,
 };
 
@@ -41,12 +41,8 @@ impl MockTokenProvider {
 
 #[async_trait]
 impl TokenProvider for MockTokenProvider {
-    async fn fetch_token(
-        &self,
-        _server_url: &str,
-        room: &str,
-        name: &str,
-    ) -> Result<Credentials, BoxError> {
+    async fn fetch_token(&self, params: &JoinParams) -> Result<Credentials, BoxError> {
+        let (room, name) = (&params.room, &params.name);
         let mut state = lock(&self.state);
         state.calls += 1;
         if let Some(err) = &state.error {

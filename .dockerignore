@@ -1,0 +1,7 @@
+.git
+target
+dist
+node_modules
+ui
+deploy/.env
+**/*.log

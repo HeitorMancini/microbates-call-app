@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use integration_tests::{find_livekit_server, LiveKitServer, TokenServer, API_SECRET};
 use sheeshcord_core::{
-    AudioSource, ScreenPreset, ScreenSource, Session, TokenProvider, Transport, TransportEvent,
+    AudioSource, JoinParams, ScreenPreset, ScreenSource, Session, TokenProvider, Transport,
+    TransportEvent,
 };
 use sheeshcord_media::{
     FakeAudio, FakeScreen, HttpTokenProvider, LiveKitTransport, MediaHub, TransportOptions,
@@ -22,7 +23,12 @@ struct Client {
 
 async fn join(tokens: &HttpTokenProvider, token_url: &str, name: &str) -> Client {
     let creds = tokens
-        .fetch_token(token_url, "media-it", name)
+        .fetch_token(&JoinParams {
+            server_url: token_url.to_owned(),
+            room: "media-it".to_owned(),
+            name: name.to_owned(),
+            password: String::new(),
+        })
         .await
         .expect("token");
     let hub = MediaHub::default();

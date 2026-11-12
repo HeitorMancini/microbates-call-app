@@ -54,6 +54,7 @@ fn params() -> JoinParams {
         server_url: "http://26.1.2.3:7881".into(),
         room: "geral".into(),
         name: "heitor".into(),
+        password: String::new(),
     }
 }
 

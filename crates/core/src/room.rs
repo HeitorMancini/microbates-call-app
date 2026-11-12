@@ -306,7 +306,7 @@ impl Actor {
         let creds = self
             .deps
             .tokens
-            .fetch_token(&params.server_url, &params.room, &params.name)
+            .fetch_token(params)
             .await
             .map_err(CoreError::token)?;
         let session = self

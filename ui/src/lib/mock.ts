@@ -28,6 +28,9 @@ export interface MockOptions {
 
 const FRIENDS = ['Bia Rocha', 'Caio', 'Duda Lima', 'Gui'];
 
+/** Senha que o mock recusa, para simular o 401 do token-server. */
+export const MOCK_WRONG_PASSWORD = 'errada';
+
 const DEVICES: AudioDevices = {
   inputs: [
     { id: 'default', name: 'Padrão do sistema' },
@@ -180,6 +183,7 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
       const errors = validateJoin(params);
       if (hasErrors(errors)) throw Object.values(errors)[0];
       if (connected || joinTimer) throw 'Você já está em uma sala.';
+      if (params.password === MOCK_WRONG_PASSWORD) throw 'senha do grupo incorreta';
       const { name } = normalizeJoin(params);
       emitState({ status: 'connecting' });
       await new Promise<void>((resolve) => {

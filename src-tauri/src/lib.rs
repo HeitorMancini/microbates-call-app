@@ -85,8 +85,15 @@ async fn join_room(
     server_url: String,
     room: String,
     name: String,
+    password: Option<String>,
 ) -> Result<(), RoomError> {
-    svc.join_room(&server_url, &room, &name).await
+    svc.join_room(
+        &server_url,
+        &room,
+        &name,
+        password.as_deref().unwrap_or_default(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -144,7 +151,7 @@ async fn viewer_credentials(
 ) -> Result<ViewerCredentials, RoomError> {
     let joined = svc.joined()?;
     let creds = tokens
-        .fetch_viewer_token(&joined.server_url, &joined.room, &joined.name)
+        .fetch_viewer_token(&joined)
         .await
         .map_err(|e| RoomError::Token(e.to_string()))?;
     Ok(ViewerCredentials {

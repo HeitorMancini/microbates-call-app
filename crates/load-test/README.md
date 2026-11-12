@@ -20,7 +20,7 @@ e **2** em erro de execução.
 ## Uso
 
 ```powershell
-# servidor local (veja infra/README.md) ou o do host no Radmin
+# servidor local (livekit-server --config deploy/livekit.dev.yaml) ou o de produção (wss://live.microbates.com)
 cargo run -p load-test --release -- --url ws://127.0.0.1:7880 -n 7 --output load-report.json
 
 # 720p com 4 participantes, H.264, limites mais rígidos
@@ -29,7 +29,7 @@ cargo run -p load-test --release -- -n 4 --width 1280 --height 720 --codec h264 
 ```
 
 Credenciais: `--api-key/--api-secret` ou `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`
-(padrão: chaves de desenvolvimento do `infra/livekit.yaml`). `--url` ou `LIVEKIT_URL`.
+(padrão: chaves de desenvolvimento do `deploy/livekit.dev.yaml`). `--url` ou `LIVEKIT_URL`.
 
 | Limite             | Opção                | Padrão |
 | ------------------ | -------------------- | ------ |
@@ -74,7 +74,7 @@ cargo run -p load-test --release -- -n 7 --loss-pct 2 --latency-ms 40 --jitter-m
   --restore-cmd 'sudo tc qdisc del dev lo root'
 ```
 
-Para testes via Radmin, aplique a degradação na interface do Radmin VPN em vez de `lo`.
+Contra o servidor de produção, a degradação pode ser aplicada na interface de rede real em vez de `lo`.
 
 ## Testes
 
@@ -90,7 +90,7 @@ cargo test -p load-test
 ## Limitações
 
 - Todos os clientes rodam no mesmo processo/máquina: mede a capacidade do SFU e
-  do link local, não o upload real do host. Para medir o Radmin, rode a ferramenta
-  em outra máquina da VPN apontando para `ws://26.x.x.x:7880`.
+  do link local, não o upload real. Para medir o servidor de produção, rode a ferramenta
+  apontando para `wss://live.microbates.com` com as chaves do `.env` da VM.
 - Só vídeo (tela); não publica áudio.
 - Jitter é a estimativa instantânea do WebRTC (maior valor entre início e fim da janela).

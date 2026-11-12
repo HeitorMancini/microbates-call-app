@@ -20,7 +20,8 @@ export function createTauriBackend(): Backend {
 
   return {
     kind: 'tauri',
-    joinRoom: ({ serverUrl, room, name }) => invoke('join_room', { serverUrl, room, name }),
+    joinRoom: ({ serverUrl, room, name, password }) =>
+      invoke('join_room', { serverUrl, room, name, password: password ?? '' }),
     leaveRoom: () => invoke('leave_room'),
     setMuted: (muted) => invoke('set_muted', { muted }),
     setDeafened: (deafened) => invoke('set_deafened', { deafened }),

@@ -186,7 +186,7 @@ jobs:
         run: |
           $log = Join-Path $env:RUNNER_TEMP "livekit-load.log"
           $server = Start-Process -FilePath $env:LIVEKIT_SERVER_BIN `
-            -ArgumentList "--config", "infra/livekit.yaml", "--node-ip", "127.0.0.1" `
+            -ArgumentList "--config", "deploy/livekit.dev.yaml", "--node-ip", "127.0.0.1" `
             -RedirectStandardOutput $log -RedirectStandardError "$log.err" -PassThru -NoNewWindow
           $code = 2
           try {

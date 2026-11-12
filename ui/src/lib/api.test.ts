@@ -36,7 +36,7 @@ describe('backend Tauri segue o CONTRACT.md', () => {
     await b.startScreenShare('monitor:0', '1080p60');
     await b.stopScreenShare();
     expect(invoke.mock.calls).toEqual([
-      ['join_room', { serverUrl: 'ws://h', room: 's', name: 'n' }],
+      ['join_room', { serverUrl: 'ws://h', room: 's', name: 'n', password: '' }],
       ['leave_room'],
       ['set_muted', { muted: true }],
       ['set_deafened', { deafened: false }],

@@ -1,0 +1,23 @@
+# Config LOCAL de desenvolvimento/teste de carga (não usar em produção; veja livekit.yaml).
+#   livekit-server --config deploy/livekit.dev.yaml --node-ip 127.0.0.1
+port: 7880
+bind_addresses:
+  - 0.0.0.0
+
+rtc:
+  # 7881 é o padrão do token-server em dev, então o ICE/TCP usa 7882.
+  tcp_port: 7882
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+
+# Chaves só de desenvolvimento (iguais aos padrões do load-test).
+keys:
+  devkey: devsecretdevsecretdevsecretdevsecret
+
+room:
+  empty_timeout: 300
+  max_participants: 16
+
+logging:
+  level: info

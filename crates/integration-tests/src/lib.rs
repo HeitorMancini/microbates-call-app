@@ -129,6 +129,7 @@ impl TokenServer {
             livekit_url: livekit_url.to_owned(),
             bind: addr,
             token_ttl: Duration::from_secs(600),
+            access_password: None,
         };
         let (tx, rx) = oneshot::channel::<()>();
         tokio::spawn(token_server::serve(listener, config, async {

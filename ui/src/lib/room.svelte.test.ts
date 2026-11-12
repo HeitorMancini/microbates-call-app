@@ -24,7 +24,7 @@ describe('RoomStore', () => {
     const store = makeStore();
     expect(await store.join({ ...join, serverUrl: 'x' })).toBe(false);
     expect(store.inRoom).toBe(false);
-    expect(store.error).toMatch(/ws:\/\//);
+    expect(store.error).toMatch(/https:\/\/live\.microbates\.com/);
     store.dismissError();
     expect(store.error).toBeNull();
     expect(store.status).toBe('disconnected');

@@ -136,12 +136,26 @@ impl ScreenPreset {
 }
 
 /// Arguments of `join_room`. `server_url` is the token-server base URL.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JoinParams {
     pub server_url: String,
     pub room: String,
     pub name: String,
+    /// Shared group password sent to the token-server.
+    #[serde(default)]
+    pub password: String,
+}
+
+impl std::fmt::Debug for JoinParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JoinParams")
+            .field("server_url", &self.server_url)
+            .field("room", &self.room)
+            .field("name", &self.name)
+            .field("password", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Response of the token server (`POST /token`).

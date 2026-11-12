@@ -16,6 +16,7 @@ beforeEach(() => localStorage.clear());
 describe('JoinScreen', () => {
   it('mostra erros acessíveis e foca o primeiro campo inválido', async () => {
     const { store, user } = setup();
+    await user.clear(screen.getByLabelText('Servidor'));
     await user.click(screen.getByRole('button', { name: 'Entrar na sala' }));
 
     const server = screen.getByLabelText('Servidor');
@@ -36,13 +37,27 @@ describe('JoinScreen', () => {
 
   it('rejeita endereço sem protocolo', async () => {
     const { user } = setup();
+    await user.clear(screen.getByLabelText('Servidor'));
     await user.type(screen.getByLabelText('Servidor'), '26.1.2.3:7880');
     await user.click(screen.getByRole('button', { name: 'Entrar na sala' }));
-    expect(screen.getByLabelText('Servidor')).toHaveAccessibleDescription(/ws:\/\/26\.1\.2\.3:7880/);
+    expect(screen.getByLabelText('Servidor')).toHaveAccessibleDescription(/https:\/\/live\.microbates\.com/);
+  });
+
+  it('usa o servidor padrão e envia a senha do grupo', async () => {
+    const { store, user } = setup();
+    expect(screen.getByLabelText('Servidor')).toHaveValue('https://live.microbates.com');
+    expect(screen.getByLabelText('Senha do grupo')).toHaveAttribute('type', 'password');
+    await user.type(screen.getByLabelText('Sala'), 'resenha');
+    await user.type(screen.getByLabelText('Seu nome'), 'Ana');
+    await user.type(screen.getByLabelText('Senha do grupo'), 'errada');
+    await user.click(screen.getByRole('button', { name: 'Entrar na sala' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/senha do grupo incorreta/);
+    expect(store.status).not.toBe('connected');
   });
 
   it('entra com dados válidos e lembra deles', async () => {
     const { store, user } = setup();
+    await user.clear(screen.getByLabelText('Servidor'));
     await user.type(screen.getByLabelText('Servidor'), 'ws://26.1.2.3:7880');
     await user.type(screen.getByLabelText('Sala'), 'resenha');
     await user.type(screen.getByLabelText('Seu nome'), 'Ana');

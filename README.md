@@ -1,8 +1,9 @@
 # Sheeshcord
 
 App desktop (Windows) de **voz + compartilhamento de tela** para um grupo pequeno
-de amigos (~7 pessoas) jogando juntos pela **Radmin VPN**. Sem chat, sem nuvem:
-um dos amigos (o *host*) roda o servidor de mídia no próprio PC.
+de amigos (~7 pessoas) jogando juntos. O servidor de mídia (LiveKit) roda numa VM
+gratuita da **Oracle Cloud** em `https://live.microbates.com`, protegido por uma
+**senha do grupo**.
 
 ## Visão geral
 
@@ -13,14 +14,14 @@ um dos amigos (o *host*) roda o servidor de mídia no próprio PC.
 ## Arquitetura
 
 ```
-┌──────────────── App (Tauri 2) ────────────────┐        ┌──── PC do host ────┐
-│ ui/  Svelte 5 + TS  (só renderiza estado)     │        │ token-server :7881 │
-│        ▲ eventos room://*      │ invoke(...)  │  HTTP  │  POST /token → JWT │
-│ src-tauri/  comandos/eventos ──┴──────────────┼───────►│                    │
-│ crates/core   máquina de estados da sala      │        │ livekit-server     │
-│ crates/media  áudio (cpal/opus), tela (WGC),  │ WebRTC │  :7880 sinalização │
-│               SDK Rust do LiveKit (libwebrtc) ├───────►│  UDP 50000–50100   │
-└───────────────────────────────────────────────┘        └────────────────────┘
+┌──────────────── App (Tauri 2) ────────────────┐        ┌─ VM Oracle (live.microbates.com) ─┐
+│ ui/  Svelte 5 + TS  (só renderiza estado)     │ HTTPS  │ Caddy :443 (TLS automático)       │
+│        ▲ eventos room://*      │ invoke(...)  │───────►│  /token,/health → token-server    │
+│ src-tauri/  comandos/eventos ──┴──────────────┤  WSS   │  resto (/rtc)   → livekit :7880   │
+│ crates/core   máquina de estados da sala      │───────►│                                   │
+│ crates/media  áudio (cpal/opus), tela (WGC),  │ WebRTC │ livekit-server                    │
+│               SDK Rust do LiveKit (libwebrtc) ├───────►│  UDP 50000–50200 · TCP 7881       │
+└───────────────────────────────────────────────┘        └───────────────────────────────────┘
 ```
 
 | Pasta                       | Conteúdo                                                                 |
@@ -32,8 +33,8 @@ um dos amigos (o *host*) roda o servidor de mídia no próprio PC.
 | `crates/token-server`       | Axum: `GET /health`, `POST /token`                                        |
 | `crates/integration-tests`  | Testes contra um `livekit-server` real + token-server                    |
 | `crates/load-test`          | Teste de carga/qualidade headless ([README](crates/load-test/README.md))   |
-| `infra/`                    | `livekit.yaml` e scripts PowerShell para o host ([README](infra/README.md)) |
-| `.github/workflows/ci.yml`  | CI no `windows-latest`                                                   |
+| `deploy/`                   | Docker Compose do servidor (LiveKit + token-server + Caddy) ([README](deploy/README.md)) |
+| `.github/workflows/`        | `ci.yml` (testes), `deploy.yml` (imagem ARM64 + deploy na VM), `release.yml` (instalador) |
 
 Fluxo: UI → `join_room` → core pede token ao token-server → conecta no LiveKit →
 eventos (`room://state`, `room://participants`) voltam para a UI. O vídeo da tela é recebido
@@ -47,8 +48,8 @@ direto no WebView por `livekit-client` (`viewer_credentials` → token `viewer~`
 - [Node.js](https://nodejs.org) 22+ e [pnpm](https://pnpm.io) (`npm i -g pnpm`)
 - WebView2 (já vem no Windows 11)
 - [`livekit-server`](https://github.com/livekit/livekit/releases) v1.13+ (`livekit_<versão>_windows_amd64.zip`)
-  em `%USERPROFILE%\.local\bin` ou no `PATH` — necessário só para o host e para
-  os testes de integração/carga.
+  em `%USERPROFILE%\.local\bin` ou no `PATH` — necessário só para os testes de integração/carga
+  e para um servidor local de desenvolvimento.
 
 Depois de instalar o Rust, se o `cargo` não estiver no PATH da sessão:
 
@@ -58,15 +59,18 @@ $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
 
 ## Como rodar
 
-### 1. Servidor (só no PC do host)
+### 1. Servidor
+
+Produção: VM Oracle Cloud Always Free com Docker Compose — guia completo (conta, VM,
+firewall, DNS, `.env`, deploy automático) em [`deploy/README.md`](deploy/README.md).
+
+Local (desenvolvimento), em dois terminais:
 
 ```powershell
-.\infra\start-server.ps1 -OpenFirewall   # 1ª vez, PowerShell como administrador
-.\infra\start-server.ps1                 # detecta o IP 26.x.x.x do Radmin
-.\infra\stop-server.ps1
+livekit-server --config deploy\livekit.dev.yaml --node-ip 127.0.0.1
+$env:LIVEKIT_API_KEY = "devkey"; $env:LIVEKIT_API_SECRET = "devsecretdevsecretdevsecretdevsecret"
+$env:LIVEKIT_URL = "ws://127.0.0.1:7880"; cargo run -p token-server   # http://127.0.0.1:7881
 ```
-
-Detalhes (portas, chaves, logs) em [`infra/README.md`](infra/README.md).
 
 ### 2. App
 
@@ -79,29 +83,27 @@ pnpm dev                       # só a UI no navegador; abra http://localhost:51
 Instalador (NSIS, instalação por usuário, sem admin):
 
 ```powershell
-$env:CARGO_TARGET_DIR = "C:\skt"   # caminho curto (veja a nota abaixo)
+$env:CARGO_TARGET_DIR = "C:\t"   # caminho curto (veja a nota abaixo)
 pnpm tauri build --bundles nsis
-# → C:\skt\release\bundle\nsis\Sheeshcord_0.1.0_x64-setup.exe
+# → C:\t\release\bundle\nsis\Sheeshcord_<versão>_x64-setup.exe
 ```
 
 > O build release do libwebrtc falha com `C1083 ... constexpr_parser.h` se o diretório
 > de build ficar longo demais (limite `MAX_PATH` de 260 caracteres no `cl.exe`). Use um
-> `CARGO_TARGET_DIR` curto, como `C:\skt`.
+> `CARGO_TARGET_DIR` curto, como `C:\t`. Ao criar uma tag `v*`, o workflow `release.yml`
+> gera o instalador e o anexa ao GitHub Release.
 
-## Usando com o Radmin VPN
+## Usando
 
-1. Todos instalam o [Radmin VPN](https://www.radmin-vpn.com) e entram na mesma rede.
-2. O host anota o próprio IP do Radmin (`26.x.x.x`) e roda `.\infra\start-server.ps1`
-   (ou `-NodeIp 26.x.x.x` se tiver mais de um adaptador).
-3. Na primeira vez o host libera o firewall (`-OpenFirewall`): TCP 7880–7882 e UDP 50000–50100.
-4. Cada amigo abre o Sheeshcord e usa como servidor `http://26.x.x.x:7881`
-   (IP do host), escolhe um nome e entra na sala.
-5. Sem áudio/vídeo? Confira se o host está online no Radmin, se as portas UDP estão
-   liberadas e se `http://26.x.x.x:7881/health` responde `{"status":"ok"}`.
+1. Instale o Sheeshcord pelo instalador da [última release](https://github.com/HeitorMancini/microbates-call-app/releases)
+   (reinstalar uma versão nova atualiza a existente).
+2. Servidor: `https://live.microbates.com` (já vem preenchido). Informe a **senha do grupo**,
+   a sala e seu nome.
+3. Sem áudio/vídeo? Veja se `https://live.microbates.com/health` responde `{"status":"ok"}`
+   e a seção de problemas em [`deploy/README.md`](deploy/README.md).
 
-O LiveKit anuncia apenas o IP do Radmin (`use_external_ip: false`), então o tráfego
-fica dentro da VPN. A qualidade da tela é limitada pelo **upload do host**: com 6
-espectadores, o SFU envia uma cópia para cada um.
+A qualidade da tela depende do **upload de quem compartilha** (uma cópia para o servidor) e
+da banda da VM (10 TB/mês grátis de saída, folgado para o grupo).
 
 ## Testes
 
@@ -127,15 +129,18 @@ limite configurado não for atingido. Perda/latência podem ser simuladas com
 - **tauri-build**: gera o instalador NSIS (artefato `sheeshcord-windows-installer`);
 - **load**: só em `workflow_dispatch` ou semanalmente (segunda 06:00 UTC); artefato `load-report`.
 
+Outros workflows: **deploy.yml** (push em `main` mexendo no token-server/`deploy/`: imagem
+ARM64 no GHCR + `docker compose up` na VM por SSH) e **release.yml** (tag `v*` → instalador no Release).
+
 ## Limitações conhecidas
 
 - Somente Windows (captura via Windows Graphics Capture; instalador NSIS).
-- Feito para LAN/VPN: sem TURN, sem TLS e com chaves de desenvolvimento
-  (`devkey`/`devsecret…`) — **não exponha o servidor na internet** sem trocar as chaves e configurar TLS.
+- Sem TURN: quem estiver numa rede que bloqueia UDP usa ICE/TCP (porta 7881), com latência maior.
+- A senha do grupo fica salva em texto puro no `localStorage` do app.
 - O SDK Rust do LiveKit tem menos recursos que o JS (encode por hardware/simulcast
   dependem da versão do libwebrtc embutido).
 - A tela é enviada em H.264 (encoder por hardware quando disponível, fallback VP8) e
   decodificada pelo WebView; o desempenho real em 1080p60 depende da GPU do host.
-- Upload do host e latência do Radmin limitam a qualidade com muitos espectadores.
+- Com muitos espectadores, a banda de saída da VM e a latência até São Paulo limitam a qualidade.
 - Captura real de áudio/tela não roda no CI; lá são usadas fontes sintéticas e a UI em modo mock.
 - O teste de carga roda todos os clientes numa só máquina (mede o SFU/link local, não o upload real do host).

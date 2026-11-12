@@ -26,9 +26,28 @@ async fn main() {
         }
     };
     tracing::info!(bind = %config.bind, livekit_url = %config.livekit_url, "token-server listening");
+    if config.access_password.is_none() {
+        tracing::warn!("ACCESS_PASSWORD not set: anyone reaching this server can get a token");
+    }
 
     let shutdown = async {
-        let _ = tokio::signal::ctrl_c().await;
+        let ctrl_c = async {
+            let _ = tokio::signal::ctrl_c().await;
+        };
+        #[cfg(unix)]
+        let term = async {
+            if let Ok(mut s) =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            {
+                s.recv().await;
+            }
+        };
+        #[cfg(not(unix))]
+        let term = std::future::pending::<()>();
+        tokio::select! {
+            () = ctrl_c => {},
+            () = term => {},
+        }
         tracing::info!("shutting down");
     };
     if let Err(e) = token_server::serve(listener, config, shutdown).await {

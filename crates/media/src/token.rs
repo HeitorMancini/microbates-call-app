@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Serialize;
-use sheeshcord_core::{BoxError, Credentials, TokenProvider};
+use sheeshcord_core::{BoxError, Credentials, JoinParams, TokenProvider};
 
 #[derive(Debug, Clone)]
 pub struct HttpTokenProvider {
@@ -22,6 +22,7 @@ struct TokenRequest<'a> {
     room: &'a str,
     name: &'a str,
     viewer: bool,
+    password: &'a str,
 }
 
 /// Maps what users type (`ws://host:7881`, `host:7881/`) to the token endpoint URL.
@@ -50,31 +51,31 @@ impl HttpTokenProvider {
     }
 
     /// Subscribe-only credentials for the WebView video viewer.
-    pub async fn fetch_viewer_token(
-        &self,
-        server_url: &str,
-        room: &str,
-        name: &str,
-    ) -> Result<Credentials, BoxError> {
-        self.request(server_url, room, name, true).await
+    pub async fn fetch_viewer_token(&self, params: &JoinParams) -> Result<Credentials, BoxError> {
+        self.request(params, true).await
     }
 
-    async fn request(
-        &self,
-        server_url: &str,
-        room: &str,
-        name: &str,
-        viewer: bool,
-    ) -> Result<Credentials, BoxError> {
-        let endpoint = token_endpoint(server_url);
+    async fn request(&self, params: &JoinParams, viewer: bool) -> Result<Credentials, BoxError> {
+        let endpoint = token_endpoint(&params.server_url);
         let res = self
             .client
             .post(&endpoint)
-            .json(&TokenRequest { room, name, viewer })
+            .json(&TokenRequest {
+                room: &params.room,
+                name: &params.name,
+                viewer,
+                password: &params.password,
+            })
             .send()
             .await
             .map_err(|e| format!("token-server inacessível em {endpoint}: {e}"))?;
         let status = res.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("senha do grupo incorreta".into());
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err("muitas tentativas com senha errada; aguarde alguns minutos".into());
+        }
         if !status.is_success() {
             let body = res.text().await.unwrap_or_default();
             return Err(format!("token-server respondeu {status}: {body}").into());
@@ -85,13 +86,8 @@ impl HttpTokenProvider {
 
 #[async_trait]
 impl TokenProvider for HttpTokenProvider {
-    async fn fetch_token(
-        &self,
-        server_url: &str,
-        room: &str,
-        name: &str,
-    ) -> Result<Credentials, BoxError> {
-        self.request(server_url, room, name, false).await
+    async fn fetch_token(&self, params: &JoinParams) -> Result<Credentials, BoxError> {
+        self.request(params, false).await
     }
 }
 

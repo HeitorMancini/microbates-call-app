@@ -12,7 +12,7 @@ export function validateJoin(params: JoinParams): JoinErrors {
   const serverUrl = params.serverUrl.trim();
   if (!serverUrl) errors.serverUrl = 'Informe o endereço do servidor.';
   else if (!URL_RE.test(serverUrl))
-    errors.serverUrl = 'Use um endereço como ws://26.1.2.3:7880 (ws, wss, http ou https).';
+    errors.serverUrl = 'Use um endereço como https://live.microbates.com (ws, wss, http ou https).';
 
   for (const [key, label] of [
     ['room', 'o nome da sala'],
@@ -30,5 +30,7 @@ export function hasErrors(errors: JoinErrors): boolean {
 }
 
 export function normalizeJoin(params: JoinParams): JoinParams {
-  return { serverUrl: params.serverUrl.trim(), room: params.room.trim(), name: params.name.trim() };
+  const clean: JoinParams = { serverUrl: params.serverUrl.trim(), room: params.room.trim(), name: params.name.trim() };
+  if (params.password) clean.password = params.password;
+  return clean;
 }

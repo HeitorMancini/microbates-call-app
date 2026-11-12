@@ -73,7 +73,11 @@ export interface JoinParams {
   serverUrl: string;
   room: string;
   name: string;
+  /** Senha do grupo exigida pelo servidor (vazia se o servidor não pede). */
+  password?: string;
 }
+
+export const DEFAULT_SERVER_URL = 'https://live.microbates.com';
 
 export const EVENTS = {
   state: 'room://state',

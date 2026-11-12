@@ -22,6 +22,8 @@ pub struct Config {
     pub livekit_url: String,
     pub bind: SocketAddr,
     pub token_ttl: Duration,
+    /// Shared group password required on `/token`. `None` disables the check (local dev only).
+    pub access_password: Option<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -32,6 +34,10 @@ impl std::fmt::Debug for Config {
             .field("livekit_url", &self.livekit_url)
             .field("bind", &self.bind)
             .field("token_ttl", &self.token_ttl)
+            .field(
+                "access_password",
+                &self.access_password.as_ref().map(|_| "<redacted>"),
+            )
             .finish()
     }
 }
@@ -69,6 +75,7 @@ impl Config {
             livekit_url,
             bind,
             token_ttl: DEFAULT_TOKEN_TTL,
+            access_password: get("ACCESS_PASSWORD"),
         })
     }
 }
@@ -159,5 +166,17 @@ mod tests {
         ]))
         .unwrap();
         assert!(!format!("{cfg:?}").contains("supersecret"));
+    }
+
+    #[test]
+    fn reads_access_password_and_redacts_it() {
+        let cfg = Config::from_lookup(lookup(&[
+            ("LIVEKIT_API_KEY", "k"),
+            ("LIVEKIT_API_SECRET", "s"),
+            ("ACCESS_PASSWORD", "senha-do-grupo"),
+        ]))
+        .unwrap();
+        assert_eq!(cfg.access_password.as_deref(), Some("senha-do-grupo"));
+        assert!(!format!("{cfg:?}").contains("senha-do-grupo"));
     }
 }

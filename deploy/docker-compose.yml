@@ -1,0 +1,42 @@
+# Sheeshcord em produção (Oracle Cloud Always Free, Ubuntu ARM64).
+# Uso: cp .env.example .env && editar && docker compose up -d
+# Rede "host": o LiveKit precisa de muitas portas UDP e de ver o IP real.
+name: sheeshcord
+
+services:
+  livekit:
+    image: livekit/livekit-server:v${LIVEKIT_VERSION:-1.13.11}
+    command: --config /etc/livekit.yaml
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?defina LIVEKIT_API_KEY no .env}: ${LIVEKIT_API_SECRET:?defina LIVEKIT_API_SECRET no .env}"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+
+  token-server:
+    image: ${TOKEN_SERVER_IMAGE:-ghcr.io/heitormancini/sheeshcord-token-server:latest}
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      LIVEKIT_URL: wss://${DOMAIN:?defina DOMAIN no .env}
+      ACCESS_PASSWORD: ${ACCESS_PASSWORD:?defina ACCESS_PASSWORD no .env}
+      # Só o Caddy (mesma máquina) acessa o token-server.
+      TOKEN_SERVER_BIND: 127.0.0.1:7890
+
+  caddy:
+    image: caddy:2
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

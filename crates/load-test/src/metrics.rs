@@ -170,7 +170,7 @@ pub struct Thresholds {
 }
 
 impl Default for Thresholds {
-    /// Targets for 1080p30 screen share on a LAN/Radmin link.
+    /// Targets for 1080p30 screen share through the SFU.
     fn default() -> Self {
         Self {
             min_bitrate_kbps: 1000.0,
