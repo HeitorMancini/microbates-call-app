@@ -78,9 +78,14 @@ pnpm dev                       # só a UI no navegador; abra http://localhost:51
 Instalador (NSIS, instalação por usuário, sem admin):
 
 ```powershell
+$env:CARGO_TARGET_DIR = "C:\skt"   # caminho curto (veja a nota abaixo)
 pnpm tauri build --bundles nsis
-# → target\release\bundle\nsis\Sheeshcord_0.1.0_x64-setup.exe
+# → C:\skt\release\bundle\nsis\Sheeshcord_0.1.0_x64-setup.exe
 ```
+
+> O build release do libwebrtc falha com `C1083 ... constexpr_parser.h` se o diretório
+> de build ficar longo demais (limite `MAX_PATH` de 260 caracteres no `cl.exe`). Use um
+> `CARGO_TARGET_DIR` curto, como `C:\skt`.
 
 ## Usando com o Radmin VPN
 
