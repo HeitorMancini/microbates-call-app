@@ -1,0 +1,36 @@
+﻿[package]
+name = "media"
+description = "Real media for Sheeshcord: LiveKit transport, cpal audio, WGC screen capture and fakes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "sheeshcord_media"
+path = "src/lib.rs"
+
+[features]
+default = []
+# Synthetic sources (440 Hz tone, video test pattern) for tests/CI without hardware.
+fake = []
+
+[dependencies]
+async-trait = "0.1"
+core = { path = "../core" }
+cpal = "0.18"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+jpeg-encoder = "0.7"
+livekit = "0.10"
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-capture = "2"
+
+[dev-dependencies]
+integration-tests = { path = "../integration-tests" }
+media = { path = ".", features = ["fake"] }

@@ -1,0 +1,17 @@
+{
+  "name": "sheeshcord",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @sheeshcord/ui dev",
+    "build": "pnpm --filter @sheeshcord/ui build",
+    "preview": "pnpm --filter @sheeshcord/ui preview",
+    "test": "pnpm --filter @sheeshcord/ui test",
+    "test:e2e": "pnpm --filter @sheeshcord/ui test:e2e",
+    "lint": "pnpm --filter @sheeshcord/ui lint",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
+  }
+}

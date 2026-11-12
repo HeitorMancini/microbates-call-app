@@ -1,0 +1,21 @@
+[package]
+name = "integration-tests"
+description = "End-to-end tests against a local livekit-server and the token-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+token-server = { path = "../token-server" }
+tokio = { workspace = true }
+
+[dev-dependencies]
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
+livekit-api = { version = "0.10", default-features = false, features = ["services"] }
+livekit-protocol = "0.8"
+prost = "0.14"
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+serde_json = { workspace = true }
+tokio-tungstenite = "0.30"

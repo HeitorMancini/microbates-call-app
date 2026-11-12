@@ -1,0 +1,7 @@
+# libwebrtc (LiveKit Rust SDK) ships prebuilt with the static MSVC runtime (/MT);
+# every crate must link the same CRT or the linker fails with LNK2038.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

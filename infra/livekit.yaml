@@ -1,0 +1,24 @@
+# LiveKit config for Sheeshcord (LAN/Radmin VPN, ~7 people).
+# The node IP (Radmin address, 26.x.x.x) is passed by start-server.ps1 via --node-ip.
+port: 7880
+bind_addresses:
+  - 0.0.0.0
+
+rtc:
+  # 7881 is used by the token-server, so ICE/TCP fallback uses 7882.
+  tcp_port: 7882
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+  # node_ip: 26.1.2.3
+
+# DEV keys only. Change both here and in start-server.ps1 for anything public.
+keys:
+  devkey: devsecretdevsecretdevsecretdevsecret
+
+room:
+  empty_timeout: 300
+  max_participants: 16
+
+logging:
+  level: info

@@ -1,0 +1,55 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Sheeshcord",
+  "version": "0.1.0",
+  "identifier": "com.sheeshcord.app",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../ui/dist",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Sheeshcord",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 720,
+        "minHeight": 520,
+        "backgroundColor": "#0f1a1e"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost",
+      "capabilities": ["default"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Sheeshcord",
+    "category": "SocialNetworking",
+    "shortDescription": "Voz e compartilhamento de tela para amigos",
+    "longDescription": "Sheeshcord: chamadas de voz e compartilhamento de tela em alta qualidade para grupos pequenos via LAN/Radmin VPN.",
+    "copyright": "© 2026 Sheeshcord (MIT)",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "languages": ["PortugueseBR", "English"],
+        "installerIcon": "icons/icon.ico",
+        "startMenuFolder": "Sheeshcord"
+      }
+    }
+  }
+}

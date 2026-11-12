@@ -1,0 +1,30 @@
+[package]
+name = "load-test"
+description = "Headless LiveKit load/quality test: N participants, 1 synthetic screen publisher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "load_test"
+path = "src/lib.rs"
+
+[[bin]]
+name = "load-test"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+livekit = "0.10"
+livekit-api = { version = "0.10", default-features = false, features = ["access-token"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+integration-tests = { path = "../integration-tests" }

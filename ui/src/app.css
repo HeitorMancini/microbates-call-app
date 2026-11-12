@@ -1,0 +1,177 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/bricolage-grotesque/standard.css';
+
+/*
+  Sheeshcord — "cabine de rádio à noite".
+  Petróleo profundo como base, giz para texto, âmbar de válvula para quem fala,
+  coral para o que está cortado (mudo, sair). Âmbar é o único acento vivo.
+*/
+@theme {
+  --font-sans: 'Bricolage Grotesque Variable', ui-sans-serif, system-ui, sans-serif;
+
+  --color-breu: #0f1a1e;
+  --color-casco: #15252b;
+  --color-placa: #1d333a;
+  --color-trilho: #2b464e;
+  --color-giz: #e9f3ef;
+  --color-nevoa: #a3bab4;
+  --color-valvula: #ffb547;
+  --color-valvula-fundo: #3a2c14;
+  --color-corte: #ff8a7a;
+  --color-corte-fundo: #3d1f1d;
+  --color-sinal: #7fe0be;
+
+  --radius-pill: 999px;
+  --radius-painel: 22px;
+  --radius-botao: 14px;
+
+  --ease-saida: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-mola: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-breu);
+    color: var(--color-giz);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-valvula);
+    outline-offset: 3px;
+  }
+
+  button,
+  select,
+  input {
+    font: inherit;
+    color: inherit;
+  }
+
+  button:not(:disabled),
+  select:not(:disabled),
+  label[for] {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: var(--color-valvula);
+    color: var(--color-breu);
+  }
+}
+
+@layer components {
+  .sr-only-focusable:not(:focus):not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .botao {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 44px;
+    padding: 0 1.1rem;
+    border-radius: var(--radius-botao);
+    border: 1px solid var(--color-trilho);
+    background: var(--color-placa);
+    font-weight: 600;
+    transition:
+      transform 160ms var(--ease-saida),
+      background-color 160ms ease,
+      border-color 160ms ease;
+  }
+
+  .botao:hover:not(:disabled) {
+    border-color: var(--color-nevoa);
+  }
+
+  .botao:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+
+  .botao:disabled {
+    opacity: 0.6;
+  }
+
+  .botao-primario {
+    background: var(--color-valvula);
+    border-color: var(--color-valvula);
+    color: var(--color-breu);
+  }
+
+  .botao-primario:hover:not(:disabled) {
+    border-color: var(--color-giz);
+  }
+
+  .campo {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 0.9rem;
+    border-radius: var(--radius-botao);
+    border: 1px solid var(--color-trilho);
+    background: var(--color-casco);
+    transition: border-color 160ms ease;
+  }
+
+  .campo:hover {
+    border-color: var(--color-nevoa);
+  }
+
+  .campo[aria-invalid='true'] {
+    border-color: var(--color-corte);
+  }
+
+  .painel-dialogo {
+    margin: auto;
+    width: min(460px, calc(100vw - 2rem));
+    padding: 1.5rem;
+    border: 1px solid var(--color-trilho);
+    border-radius: var(--radius-painel);
+    background: var(--color-casco);
+    color: var(--color-giz);
+  }
+
+  .painel-dialogo[open] {
+    animation: dialogo-entra 220ms var(--ease-saida);
+  }
+
+  .painel-dialogo::backdrop {
+    background: rgb(5 10 12 / 0.7);
+  }
+}
+
+@keyframes dialogo-entra {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

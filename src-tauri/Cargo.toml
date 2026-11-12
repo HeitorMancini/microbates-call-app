@@ -1,0 +1,25 @@
+[package]
+name = "sheeshcord-app"
+description = "Sheeshcord: voz e compartilhamento de tela para amigos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "sheeshcord_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+base64 = "0.22"
+core = { path = "../crates/core" }
+media = { path = "../crates/media", features = ["fake"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
