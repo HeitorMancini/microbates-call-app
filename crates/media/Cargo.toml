@@ -21,8 +21,8 @@ core = { path = "../core" }
 cpal = "0.18"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 jpeg-encoder = "0.7"
-livekit = "0.10"
-reqwest = { version = "0.13", default-features = false, features = ["json"] }
+livekit = { version = "0.10", features = ["native-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls"] }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
