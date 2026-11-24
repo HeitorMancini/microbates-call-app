@@ -168,7 +168,7 @@ mod imp {
     use livekit::webrtc::video_source::native::NativeVideoSource;
     use livekit::webrtc::video_source::VideoResolution;
     use windows::core::{Interface, Result as WinResult, GUID, PWSTR};
-    use windows::Win32::Foundation::VARIANT_TRUE;
+    use windows::Win32::Foundation::{E_FAIL, VARIANT_TRUE};
     use windows::Win32::Media::MediaFoundation::*;
     use windows::Win32::System::Com::{
         CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_MULTITHREADED,
@@ -185,6 +185,8 @@ mod imp {
     const QUEUE_FRAMES: usize = 2;
     /// How long the probe waits for the first encoded frame.
     const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+    /// An encoder that takes no input and emits nothing for this long has stalled.
+    const ENCODER_STALL: Duration = Duration::from_secs(2);
 
     /// COM (MTA) + Media Foundation for the current thread.
     struct MfRuntime {
@@ -359,24 +361,24 @@ mod imp {
     }
 
     impl Mft {
+        /// Opens the first encoder of `codec` that accepts the format, trying the one named
+        /// `preferred` (the encoder the probe validated) before the others.
         fn open_first(
             codec: VideoCodec,
+            preferred: Option<&str>,
             width: u32,
             height: u32,
             cfg: HwConfig,
         ) -> WinResult<Self> {
-            let mut last = windows::core::Error::from(MF_E_TOPO_CODEC_NOT_FOUND);
-            for (activate, vendor) in encoders(codec) {
+            let candidates = prefer(encoders(codec), |(activate, _)| {
+                preferred.is_some_and(|p| friendly_name(activate) == p)
+            });
+            first_ok(candidates, |(activate, vendor)| {
                 let name = friendly_name(&activate);
-                match Self::open(activate, name.clone(), vendor, codec, width, height, cfg) {
-                    Ok(mft) => return Ok(mft),
-                    Err(e) => {
-                        tracing::debug!(encoder = %name, ?vendor, codec = codec.as_str(), error = %e, "hardware encoder rejected the format");
-                        last = e;
-                    }
-                }
-            }
-            Err(last)
+                Self::open(activate, name.clone(), vendor, codec, width, height, cfg).inspect_err(
+                    |e| tracing::debug!(encoder = %name, ?vendor, codec = codec.as_str(), error = %e, "hardware encoder rejected the format"),
+                )
+            })
         }
 
         fn open(
@@ -717,16 +719,33 @@ mod imp {
         }
     }
 
-    /// Encodes a few frames to check the MFT really works (opening alone can succeed on
-    /// encoders that later reject system-memory input) and that its first output is a
-    /// keyframe a late viewer can decode. The MFT is released before returning.
+    /// Encodes a few frames on each encoder of `codec` in turn to find one that really works
+    /// (opening alone can succeed on encoders that later reject system-memory input) and
+    /// whose first output is a keyframe a late viewer can decode. Each MFT is released
+    /// before the next is tried and before returning.
     fn probe_codec(
         codec: VideoCodec,
         width: u32,
         height: u32,
         cfg: HwConfig,
     ) -> WinResult<(String, GpuVendor, Vec<EncodedOut>)> {
-        let mut mft = Mft::open_first(codec, width, height, cfg)?;
+        first_ok(encoders(codec), |(activate, vendor)| {
+            let name = friendly_name(&activate);
+            let mut mft = Mft::open(activate, name.clone(), vendor, codec, width, height, cfg)?;
+            let out = test_encode(&mut mft, codec, width, height, cfg).inspect_err(|e| {
+                tracing::info!(encoder = %name, ?vendor, codec = codec.as_str(), error = %e, "hardware encoder failed the test encode")
+            })?;
+            Ok((name, vendor, out))
+        })
+    }
+
+    fn test_encode(
+        mft: &mut Mft,
+        codec: VideoCodec,
+        width: u32,
+        height: u32,
+        cfg: HwConfig,
+    ) -> WinResult<Vec<EncodedOut>> {
         let deadline = Instant::now() + PROBE_TIMEOUT;
         let mut out = Vec::new();
         let mut sent = 0i64;
@@ -750,7 +769,7 @@ mod imp {
         if !decodable {
             return Err(windows::core::Error::from(MF_E_INVALIDMEDIATYPE));
         }
-        Ok((mft.name.clone(), mft.vendor, out))
+        Ok(out)
     }
 
     /// The first codec of `codecs` with a working hardware encoder on this machine.
@@ -787,14 +806,21 @@ mod imp {
     }
 
     impl HwScreenEncoder {
-        pub(crate) fn start(codec: VideoCodec, cfg: HwConfig, source: NativeVideoSource) -> Self {
+        /// Starts encoding with `encoder` (the MFT name [`probe`] reported), falling back to
+        /// another encoder of `codec` if it cannot be opened.
+        pub(crate) fn start(
+            codec: VideoCodec,
+            encoder: String,
+            cfg: HwConfig,
+            source: NativeVideoSource,
+        ) -> Self {
             let (frames, rx) = mpsc::sync_channel(QUEUE_FRAMES);
             let failed = Arc::new(AtomicBool::new(false));
             let flag = failed.clone();
             let spawned = std::thread::Builder::new()
                 .name("screen-hwenc".into())
                 .spawn(move || {
-                    if let Err(e) = run(codec, cfg, &source, &rx) {
+                    if let Err(e) = run(codec, &encoder, cfg, &source, &rx) {
                         tracing::error!(codec = codec.as_str(), error = %e, "hardware screen encoder failed");
                         flag.store(true, Ordering::Relaxed);
                     }
@@ -825,59 +851,85 @@ mod imp {
         }
     }
 
-    fn run(
-        codec: VideoCodec,
-        cfg: HwConfig,
-        source: &NativeVideoSource,
+    /// What the encoder loop needs from an encoder (the MFT, or a test double).
+    trait FrameEncoder {
+        fn size(&self) -> (u32, u32);
+        fn wants_input(&self) -> bool;
+        fn in_flight(&self) -> bool;
+        fn encode(&mut self, frame: &Nv12Frame, keyframe: bool) -> WinResult<()>;
+        fn pump(&mut self, deliver: &mut dyn FnMut(EncodedOut)) -> WinResult<()>;
+    }
+
+    impl FrameEncoder for Mft {
+        fn size(&self) -> (u32, u32) {
+            (self.width, self.height)
+        }
+        fn wants_input(&self) -> bool {
+            self.need_input > 0
+        }
+        fn in_flight(&self) -> bool {
+            self.in_flight > 0
+        }
+        fn encode(&mut self, frame: &Nv12Frame, keyframe: bool) -> WinResult<()> {
+            Mft::encode(self, frame, keyframe)
+        }
+        fn pump(&mut self, deliver: &mut dyn FnMut(EncodedOut)) -> WinResult<()> {
+            Mft::pump(self, deliver)
+        }
+    }
+
+    /// Feeds queued frames to an encoder opened (and reopened on size changes) by `open`.
+    /// `before_encode` applies pending rate changes and returns whether a keyframe was
+    /// requested. Returns `Ok` once every sender is gone.
+    fn drive<E: FrameEncoder>(
         frames: &mpsc::Receiver<Nv12Frame>,
+        mut open: impl FnMut(u32, u32) -> WinResult<E>,
+        mut before_encode: impl FnMut(&mut E) -> bool,
+        mut deliver: impl FnMut(EncodedOut),
+        stall_after: Duration,
     ) -> WinResult<()> {
-        let _mf = MfRuntime::start()?;
-        let mut mft: Option<Mft> = None;
+        let mut enc: Option<E> = None;
         let mut pending: Option<Nv12Frame> = None;
-        let mut deliver = |out: EncodedOut| {
-            source.capture_encoded_frame(&EncodedVideoFrame {
-                codec: encoded_codec(codec),
-                payload: &out.payload,
-                timestamp_us: out.timestamp_us,
-                frame_type: if out.key {
-                    EncodedFrameType::Key
-                } else {
-                    EncodedFrameType::Delta
-                },
-                resolution: VideoResolution {
-                    width: out.width,
-                    height: out.height,
-                },
-                frame_metadata: None,
-            });
-        };
+        // Last time the encoder was not refusing work it owes us (or emitted output).
+        let mut progress = Instant::now();
         loop {
-            if let Some(m) = mft.as_mut() {
-                m.pump(&mut deliver)?;
+            if let Some(e) = enc.as_mut() {
+                e.pump(&mut |out| {
+                    progress = Instant::now();
+                    deliver(out);
+                })?;
             }
             if let Some(frame) = pending.take() {
                 let size = (frame.width, frame.height);
-                if mft.as_ref().is_none_or(|m| (m.width, m.height) != size) {
-                    drop(mft.take());
-                    mft = Some(Mft::open_first(codec, size.0, size.1, cfg)?);
+                if enc.as_ref().is_none_or(|e| e.size() != size) {
+                    drop(enc.take());
+                    enc = Some(open(size.0, size.1)?);
                 }
-                let m = mft.as_mut().expect("encoder opened above");
-                if m.need_input > 0 {
-                    if let Some(rate) = source.take_rate_control_request() {
-                        m.apply_rate(rate.target_bitrate_bps, cfg.max_bitrate_bps);
-                    }
-                    m.encode(&frame, source.take_keyframe_request())?;
+                let e = enc.as_mut().expect("encoder opened above");
+                if e.wants_input() {
+                    let key = before_encode(e);
+                    e.encode(&frame, key)?;
                 } else {
                     pending = Some(frame);
                 }
             }
-            let busy = pending.is_some() || mft.as_ref().is_some_and(|m| m.in_flight > 0);
-            let wait = Duration::from_millis(if busy { 1 } else { 50 });
-            if pending.is_some() {
-                std::thread::sleep(wait);
-                continue;
+            let in_flight = enc.as_ref().is_some_and(|e| e.in_flight());
+            let refusing = enc.as_ref().is_some_and(|e| !e.wants_input());
+            if !(refusing && (pending.is_some() || in_flight)) {
+                progress = Instant::now();
+            } else if progress.elapsed() > stall_after {
+                return Err(windows::core::Error::new(
+                    E_FAIL,
+                    "hardware encoder stalled (no input requested, no output)",
+                ));
             }
+            let wait = Duration::from_millis(if pending.is_some() || in_flight {
+                1
+            } else {
+                50
+            });
             match frames.recv_timeout(wait) {
+                // A newer frame replaces one the encoder has not taken yet.
                 Ok(frame) => pending = Some(frame),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
@@ -885,9 +937,179 @@ mod imp {
         }
     }
 
+    /// The first `Ok` of `f` over `items`, trying them in order (else the last error).
+    fn first_ok<T, R>(
+        items: impl IntoIterator<Item = T>,
+        mut f: impl FnMut(T) -> WinResult<R>,
+    ) -> WinResult<R> {
+        let mut last = windows::core::Error::from(MF_E_TOPO_CODEC_NOT_FOUND);
+        for item in items {
+            match f(item) {
+                Ok(r) => return Ok(r),
+                Err(e) => last = e,
+            }
+        }
+        Err(last)
+    }
+
+    /// `items` with the preferred ones first, otherwise in their original order.
+    fn prefer<T>(items: Vec<T>, is_preferred: impl Fn(&T) -> bool) -> Vec<T> {
+        let (mut first, rest): (Vec<T>, Vec<T>) = items.into_iter().partition(|i| is_preferred(i));
+        first.extend(rest);
+        first
+    }
+
+    fn run(
+        codec: VideoCodec,
+        encoder: &str,
+        cfg: HwConfig,
+        source: &NativeVideoSource,
+        frames: &mpsc::Receiver<Nv12Frame>,
+    ) -> WinResult<()> {
+        let _mf = MfRuntime::start()?;
+        drive(
+            frames,
+            |w, h| Mft::open_first(codec, Some(encoder), w, h, cfg),
+            |m: &mut Mft| {
+                if let Some(rate) = source.take_rate_control_request() {
+                    m.apply_rate(rate.target_bitrate_bps, cfg.max_bitrate_bps);
+                }
+                source.take_keyframe_request()
+            },
+            |out: EncodedOut| {
+                source.capture_encoded_frame(&EncodedVideoFrame {
+                    codec: encoded_codec(codec),
+                    payload: &out.payload,
+                    timestamp_us: out.timestamp_us,
+                    frame_type: if out.key {
+                        EncodedFrameType::Key
+                    } else {
+                        EncodedFrameType::Delta
+                    },
+                    resolution: VideoResolution {
+                        width: out.width,
+                        height: out.height,
+                    },
+                    frame_metadata: None,
+                });
+            },
+            ENCODER_STALL,
+        )
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        /// Encoder double: accepts input only when `accepts` is set, never emits output.
+        struct FakeEncoder {
+            size: (u32, u32),
+            accepts: bool,
+        }
+
+        impl FrameEncoder for FakeEncoder {
+            fn size(&self) -> (u32, u32) {
+                self.size
+            }
+            fn wants_input(&self) -> bool {
+                self.accepts
+            }
+            fn in_flight(&self) -> bool {
+                false
+            }
+            fn encode(&mut self, _: &Nv12Frame, _: bool) -> WinResult<()> {
+                Ok(())
+            }
+            fn pump(&mut self, _: &mut dyn FnMut(EncodedOut)) -> WinResult<()> {
+                Ok(())
+            }
+        }
+
+        /// Runs the encoder loop on its own thread; `None` if it is still running after 5 s.
+        fn drive_fake(
+            rx: mpsc::Receiver<Nv12Frame>,
+            accepts: bool,
+            stall_after: Duration,
+        ) -> mpsc::Receiver<WinResult<()>> {
+            let (done, result) = mpsc::channel();
+            std::thread::spawn(move || {
+                let r = drive(
+                    &rx,
+                    |w, h| {
+                        Ok(FakeEncoder {
+                            size: (w, h),
+                            accepts,
+                        })
+                    },
+                    |_| false,
+                    |_| {},
+                    stall_after,
+                );
+                let _ = done.send(r);
+            });
+            result
+        }
+
+        #[test]
+        fn stuck_encoder_is_reported_as_failed() {
+            let (tx, rx) = mpsc::sync_channel(QUEUE_FRAMES);
+            tx.send(black_frame(64, 64, 0)).unwrap();
+            let result = drive_fake(rx, false, Duration::from_millis(200));
+            let r = result
+                .recv_timeout(Duration::from_secs(5))
+                .expect("loop hung");
+            assert!(r.is_err(), "a stalled encoder must fail");
+            drop(tx);
+        }
+
+        #[test]
+        fn encoder_thread_exits_when_feeds_are_dropped_while_stuck() {
+            let (tx, rx) = mpsc::sync_channel(QUEUE_FRAMES);
+            tx.send(black_frame(64, 64, 0)).unwrap();
+            let result = drive_fake(rx, false, Duration::from_secs(60));
+            std::thread::sleep(Duration::from_millis(100));
+            drop(tx);
+            let r = result
+                .recv_timeout(Duration::from_secs(5))
+                .expect("loop hung");
+            assert!(r.is_ok());
+        }
+
+        #[test]
+        fn idle_capture_is_not_a_stall() {
+            let (tx, rx) = mpsc::sync_channel(QUEUE_FRAMES);
+            let result = drive_fake(rx, true, Duration::from_millis(100));
+            tx.send(black_frame(64, 64, 0)).unwrap();
+            std::thread::sleep(Duration::from_millis(300));
+            tx.send(black_frame(64, 64, 33_000)).unwrap();
+            std::thread::sleep(Duration::from_millis(50));
+            drop(tx);
+            let r = result
+                .recv_timeout(Duration::from_secs(5))
+                .expect("loop hung");
+            assert!(r.is_ok(), "{r:?}");
+        }
+
+        #[test]
+        fn every_candidate_is_tried_until_one_works() {
+            let mut tried = Vec::new();
+            let got = first_ok(["dgpu", "igpu"], |name| {
+                tried.push(name);
+                if name == "igpu" {
+                    Ok(name)
+                } else {
+                    Err(windows::core::Error::from(MF_E_INVALIDMEDIATYPE))
+                }
+            });
+            assert_eq!(got.unwrap(), "igpu");
+            assert_eq!(tried, ["dgpu", "igpu"]);
+        }
+
+        #[test]
+        fn the_probed_encoder_is_opened_first() {
+            assert_eq!(prefer(vec![1, 2, 3, 2], |&x| x == 2), [2, 2, 1, 3]);
+            assert_eq!(prefer(vec![1, 3], |&x| x == 2), [1, 3]);
+        }
 
         /// Runs on the real GPU; skipped when the machine has no hardware encoder MFT.
         #[test]
@@ -965,7 +1187,7 @@ mod imp {
     pub(crate) struct HwScreenEncoder;
 
     impl HwScreenEncoder {
-        pub(crate) fn start(_: VideoCodec, _: HwConfig, _: NativeVideoSource) -> Self {
+        pub(crate) fn start(_: VideoCodec, _: String, _: HwConfig, _: NativeVideoSource) -> Self {
             Self
         }
 

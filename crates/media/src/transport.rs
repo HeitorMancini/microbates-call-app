@@ -290,7 +290,7 @@ impl LiveKitTransport {
         Some(HwPublish {
             publication,
             track,
-            encoder: Arc::new(HwScreenEncoder::start(codec, cfg, source)),
+            encoder: Arc::new(HwScreenEncoder::start(codec, encoder.clone(), cfg, source)),
             info: ScreenEncoderInfo {
                 codec,
                 encoder,
@@ -547,6 +547,8 @@ impl Transport for LiveKitTransport {
     async fn unpublish_screen(&self) -> Result<(), BoxError> {
         self.hub.set_screen_sink(None);
         let mut guard = self.active.lock().await;
+        // A software republish holding the lock may have installed a new sink meanwhile.
+        self.hub.set_screen_sink(None);
         let Some(active) = guard.as_mut() else {
             return Ok(());
         };
