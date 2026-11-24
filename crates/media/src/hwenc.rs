@@ -13,6 +13,14 @@ use livekit::webrtc::prelude::{I420Buffer, VideoBuffer};
 
 pub(crate) use imp::{probe, HwScreenEncoder};
 
+/// A hardware encoder that opened and produced a keyframe on this machine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HwProbe {
+    pub codec: VideoCodec,
+    pub encoder: String,
+    pub vendor: GpuVendor,
+}
+
 /// Encoder settings shared by every (re)opened MFT of one share.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HwConfig {
@@ -24,6 +32,40 @@ pub(crate) struct HwConfig {
 const GOP_SECONDS: u32 = 4;
 /// Floor for the bitrate WebRTC's bandwidth estimate can push the encoder down to.
 const MIN_BITRATE_BPS: u64 = 500_000;
+
+/// GPU maker of a hardware encoder MFT.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GpuVendor {
+    Nvidia,
+    Amd,
+    Intel,
+    Other,
+}
+
+impl GpuVendor {
+    /// From the MFT's `MFT_ENUM_HARDWARE_VENDOR_ID_Attribute` (e.g. `VEN_10DE`).
+    pub(crate) fn from_vendor_id(id: &str) -> Self {
+        let id = id.to_ascii_uppercase();
+        if id.starts_with("VEN_10DE") {
+            Self::Nvidia
+        } else if id.starts_with("VEN_1002") {
+            Self::Amd
+        } else if id.starts_with("VEN_8086") {
+            Self::Intel
+        } else {
+            Self::Other
+        }
+    }
+
+    /// Lower is preferred: discrete GPUs before an integrated Intel GPU on hybrid laptops.
+    pub(crate) fn rank(self) -> u8 {
+        match self {
+            Self::Nvidia | Self::Amd => 0,
+            Self::Intel => 1,
+            Self::Other => 2,
+        }
+    }
+}
 
 /// Codecs the hardware path can produce, in the caller's order of preference.
 pub(crate) fn hardware_codecs(preferred: &[VideoCodec]) -> Vec<VideoCodec> {
@@ -45,8 +87,9 @@ pub(crate) struct Nv12Frame {
 }
 
 impl Nv12Frame {
+    /// Converts to NV12, cropping odd dimensions to even (NVENC/AMF reject odd NV12 sizes).
     pub(crate) fn from_i420(buffer: &I420Buffer, timestamp_us: i64) -> Self {
-        let (width, height) = (buffer.width(), buffer.height());
+        let (width, height) = (buffer.width() & !1, buffer.height() & !1);
         let luma = (width * height) as usize;
         let mut data = vec![0u8; luma + luma / 2];
         let (dst_y, dst_uv) = data.split_at_mut(luma);
@@ -133,8 +176,8 @@ mod imp {
     use windows::Win32::System::Variant::{VARIANT, VT_BOOL, VT_UI4};
 
     use super::{
-        h264_nal_types, with_h264_parameter_sets, HwConfig, Nv12Frame, GOP_SECONDS, H264_NAL_IDR,
-        MIN_BITRATE_BPS,
+        h264_nal_types, with_h264_parameter_sets, GpuVendor, HwConfig, HwProbe, Nv12Frame,
+        GOP_SECONDS, H264_NAL_IDR, H264_NAL_SPS, MIN_BITRATE_BPS,
     };
     use crate::hub::ScreenFeed;
 
@@ -217,8 +260,8 @@ mod imp {
         v
     }
 
-    /// Hardware encoder MFTs for `codec` taking NV12, best first.
-    fn encoders(codec: VideoCodec) -> Vec<IMFActivate> {
+    /// Hardware encoder MFTs for `codec` taking NV12, discrete GPUs first, then by merit.
+    fn encoders(codec: VideoCodec) -> Vec<(IMFActivate, GpuVendor)> {
         let Some(subtype) = subtype(codec) else {
             return Vec::new();
         };
@@ -249,28 +292,38 @@ mod imp {
             {
                 return Vec::new();
             }
-            let found = std::slice::from_raw_parts_mut(list, count as usize)
-                .iter_mut()
-                .filter_map(Option::take)
-                .collect();
+            let mut found: Vec<(IMFActivate, GpuVendor)> =
+                std::slice::from_raw_parts_mut(list, count as usize)
+                    .iter_mut()
+                    .filter_map(Option::take)
+                    .map(|activate| {
+                        let vendor = string_attr(&activate, &MFT_ENUM_HARDWARE_VENDOR_ID_Attribute)
+                            .map_or(GpuVendor::Other, |id| GpuVendor::from_vendor_id(&id));
+                        (activate, vendor)
+                    })
+                    .collect();
             CoTaskMemFree(Some(list as *const _));
+            // Stable: keeps the SORTANDFILTER merit order within each vendor rank.
+            found.sort_by_key(|(_, vendor)| vendor.rank());
             found
         }
     }
 
     fn friendly_name(activate: &IMFActivate) -> String {
-        let mut name = PWSTR::null();
+        string_attr(activate, &MFT_FRIENDLY_NAME_Attribute)
+            .unwrap_or_else(|| "hardware MFT".to_owned())
+    }
+
+    fn string_attr(activate: &IMFActivate, key: &GUID) -> Option<String> {
+        let mut value = PWSTR::null();
         let mut len = 0u32;
         // SAFETY: the string is allocated by MF and freed right after copying.
         unsafe {
-            if activate
-                .GetAllocatedString(&MFT_FRIENDLY_NAME_Attribute, &mut name, &mut len)
-                .is_err()
-            {
-                return "hardware MFT".to_owned();
-            }
-            let out = name.to_string().unwrap_or_default();
-            CoTaskMemFree(Some(name.0 as *const _));
+            activate
+                .GetAllocatedString(key, &mut value, &mut len)
+                .ok()?;
+            let out = value.to_string().ok();
+            CoTaskMemFree(Some(value.0 as *const _));
             out
         }
     }
@@ -290,6 +343,7 @@ mod imp {
         events: IMFMediaEventGenerator,
         codec_api: Option<ICodecAPI>,
         name: String,
+        vendor: GpuVendor,
         codec: VideoCodec,
         width: u32,
         height: u32,
@@ -312,12 +366,12 @@ mod imp {
             cfg: HwConfig,
         ) -> WinResult<Self> {
             let mut last = windows::core::Error::from(MF_E_TOPO_CODEC_NOT_FOUND);
-            for activate in encoders(codec) {
+            for (activate, vendor) in encoders(codec) {
                 let name = friendly_name(&activate);
-                match Self::open(activate, name.clone(), codec, width, height, cfg) {
+                match Self::open(activate, name.clone(), vendor, codec, width, height, cfg) {
                     Ok(mft) => return Ok(mft),
                     Err(e) => {
-                        tracing::debug!(encoder = %name, codec = codec.as_str(), error = %e, "hardware encoder rejected the format");
+                        tracing::debug!(encoder = %name, ?vendor, codec = codec.as_str(), error = %e, "hardware encoder rejected the format");
                         last = e;
                     }
                 }
@@ -328,6 +382,7 @@ mod imp {
         fn open(
             activate: IMFActivate,
             name: String,
+            vendor: GpuVendor,
             codec: VideoCodec,
             width: u32,
             height: u32,
@@ -357,6 +412,7 @@ mod imp {
                     activate,
                     transform,
                     name,
+                    vendor,
                     codec,
                     width,
                     height,
@@ -371,19 +427,12 @@ mod imp {
                     sequence_header: Vec::new(),
                 };
 
-                // Real-time settings; must precede the media types on some encoders.
-                if !mft.set(
-                    &CODECAPI_AVEncCommonRateControlMode,
-                    variant_u32(eAVEncCommonRateControlMode_LowDelayVBR.0 as u32),
-                ) {
-                    mft.set(
-                        &CODECAPI_AVEncCommonRateControlMode,
-                        variant_u32(eAVEncCommonRateControlMode_CBR.0 as u32),
-                    );
-                }
+                // Real-time settings; must precede the media types on some encoders, while
+                // some NVIDIA drivers only accept them once the types are set (retried below).
+                let rate_set = mft.set_rate_control();
                 mft.set(&CODECAPI_AVLowLatencyMode, variant_true());
                 mft.set(&CODECAPI_AVEncMPVDefaultBPictureCount, variant_u32(0));
-                mft.set(&CODECAPI_AVEncMPVGOPSize, variant_u32(fps * GOP_SECONDS));
+                let gop_set = mft.set(&CODECAPI_AVEncMPVGOPSize, variant_u32(fps * GOP_SECONDS));
                 mft.set(&CODECAPI_AVEncCommonMeanBitRate, variant_u32(mft.bitrate));
 
                 let output = MFCreateMediaType()?;
@@ -413,6 +462,12 @@ mod imp {
                     mft.transform.SetOutputType(out_id, &output, 0)?;
                 }
                 mft.set_input_type()?;
+                if !rate_set {
+                    mft.set_rate_control();
+                }
+                if !gop_set {
+                    mft.set(&CODECAPI_AVEncMPVGOPSize, variant_u32(fps * GOP_SECONDS));
+                }
                 // Some encoders only honor the bitrate once the types are set.
                 mft.set(&CODECAPI_AVEncCommonMeanBitRate, variant_u32(mft.bitrate));
 
@@ -429,6 +484,7 @@ mod imp {
                     .ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0)?;
                 tracing::info!(
                     encoder = %mft.name,
+                    vendor = ?mft.vendor,
                     codec = codec.as_str(),
                     width,
                     height,
@@ -464,6 +520,17 @@ mod imp {
                 return self.transform.SetInputType(self.in_id, &available, 0);
             }
             direct
+        }
+
+        /// Low-delay VBR, else CBR. Returns whether the encoder accepted either.
+        fn set_rate_control(&self) -> bool {
+            self.set(
+                &CODECAPI_AVEncCommonRateControlMode,
+                variant_u32(eAVEncCommonRateControlMode_LowDelayVBR.0 as u32),
+            ) || self.set(
+                &CODECAPI_AVEncCommonRateControlMode,
+                variant_u32(eAVEncCommonRateControlMode_CBR.0 as u32),
+            )
         }
 
         fn set(&self, api: &GUID, value: VARIANT) -> bool {
@@ -651,13 +718,14 @@ mod imp {
     }
 
     /// Encodes a few frames to check the MFT really works (opening alone can succeed on
-    /// encoders that later reject system-memory input). Returns the encoded frames.
+    /// encoders that later reject system-memory input) and that its first output is a
+    /// keyframe a late viewer can decode. The MFT is released before returning.
     fn probe_codec(
         codec: VideoCodec,
         width: u32,
         height: u32,
         cfg: HwConfig,
-    ) -> WinResult<(String, Vec<EncodedOut>)> {
+    ) -> WinResult<(String, GpuVendor, Vec<EncodedOut>)> {
         let mut mft = Mft::open_first(codec, width, height, cfg)?;
         let deadline = Instant::now() + PROBE_TIMEOUT;
         let mut out = Vec::new();
@@ -673,24 +741,36 @@ mod imp {
                 std::thread::sleep(Duration::from_millis(2));
             }
         }
-        if out.is_empty() {
+        let Some(first) = out.first() else {
             return Err(windows::core::Error::from(MF_E_TRANSFORM_NEED_MORE_INPUT));
+        };
+        let decodable = first.key
+            && (codec != VideoCodec::H264
+                || h264_nal_types(&first.payload).any(|t| t == H264_NAL_SPS));
+        if !decodable {
+            return Err(windows::core::Error::from(MF_E_INVALIDMEDIATYPE));
         }
-        Ok((mft.name.clone(), out))
+        Ok((mft.name.clone(), mft.vendor, out))
     }
 
-    /// The first codec of `codecs` with a working hardware encoder on this machine, with
-    /// the encoder's name. Blocking (opens and test-encodes on the GPU).
+    /// The first codec of `codecs` with a working hardware encoder on this machine.
+    /// Blocking (opens and test-encodes on the GPU).
     pub(crate) fn probe(
         codecs: &[VideoCodec],
         width: u32,
         height: u32,
         cfg: HwConfig,
-    ) -> Option<(VideoCodec, String)> {
+    ) -> Option<HwProbe> {
         let _mf = MfRuntime::start().ok()?;
         for &codec in codecs {
             match probe_codec(codec, width, height, cfg) {
-                Ok((name, _)) => return Some((codec, name)),
+                Ok((encoder, vendor, _)) => {
+                    return Some(HwProbe {
+                        codec,
+                        encoder,
+                        vendor,
+                    })
+                }
                 Err(e) => {
                     tracing::info!(codec = codec.as_str(), error = %e, "no usable hardware encoder")
                 }
@@ -817,7 +897,7 @@ mod imp {
             };
             for codec in [VideoCodec::H264, VideoCodec::AV1] {
                 match probe_codec(codec, 640, 360, cfg) {
-                    Ok((name, out)) => {
+                    Ok((name, vendor, out)) => {
                         let first = &out[0];
                         assert!(
                             first.key,
@@ -833,13 +913,33 @@ mod imp {
                             );
                         }
                         eprintln!(
-                            "{} via {name}: {} bytes",
+                            "{} via {name} ({vendor:?}): {} bytes",
                             codec.as_str(),
                             first.payload.len()
                         );
                     }
                     Err(e) => eprintln!("SKIPPED {}: {e}", codec.as_str()),
                 }
+            }
+        }
+
+        /// Repeated probes must not leak encoder sessions (GeForce cards cap NVENC sessions).
+        #[test]
+        fn probe_releases_the_encoder_before_returning() {
+            let cfg = HwConfig {
+                fps: 30,
+                max_bitrate_bps: 2_000_000,
+            };
+            let Some(first) = probe(&[VideoCodec::H264], 640, 360, cfg) else {
+                eprintln!("SKIPPED: no hardware H.264 encoder");
+                return;
+            };
+            eprintln!("{} ({:?})", first.encoder, first.vendor);
+            for _ in 0..12 {
+                assert_eq!(
+                    probe(&[VideoCodec::H264], 640, 360, cfg).map(|p| p.encoder),
+                    Some(first.encoder.clone())
+                );
             }
         }
     }
@@ -850,15 +950,10 @@ mod imp {
     use livekit::options::VideoCodec;
     use livekit::webrtc::video_source::native::NativeVideoSource;
 
-    use super::HwConfig;
+    use super::{HwConfig, HwProbe};
     use crate::hub::ScreenFeed;
 
-    pub(crate) fn probe(
-        _: &[VideoCodec],
-        _: u32,
-        _: u32,
-        _: HwConfig,
-    ) -> Option<(VideoCodec, String)> {
+    pub(crate) fn probe(_: &[VideoCodec], _: u32, _: u32, _: HwConfig) -> Option<HwProbe> {
         None
     }
 
@@ -908,6 +1003,39 @@ mod tests {
         assert_eq!((frame.width, frame.height, frame.timestamp_us), (4, 2, 7));
         assert_eq!(&frame.data[..8], &[10; 8]);
         assert_eq!(&frame.data[8..], &[20, 30, 20, 30]);
+    }
+
+    #[test]
+    fn vendor_ids_map_to_gpu_vendors() {
+        assert_eq!(GpuVendor::from_vendor_id("VEN_10DE"), GpuVendor::Nvidia);
+        assert_eq!(
+            GpuVendor::from_vendor_id("ven_1002&DEV_7590"),
+            GpuVendor::Amd
+        );
+        assert_eq!(GpuVendor::from_vendor_id("VEN_8086"), GpuVendor::Intel);
+        assert_eq!(GpuVendor::from_vendor_id(""), GpuVendor::Other);
+    }
+
+    #[test]
+    fn encoders_prefer_discrete_vendors() {
+        let mut list = [
+            (GpuVendor::Intel, "qsv"),
+            (GpuVendor::Nvidia, "nvenc"),
+            (GpuVendor::Other, "x"),
+        ];
+        list.sort_by_key(|(v, _)| v.rank());
+        assert_eq!(
+            list.iter().map(|(_, n)| *n).collect::<Vec<_>>(),
+            ["nvenc", "qsv", "x"]
+        );
+    }
+
+    #[test]
+    fn odd_frames_are_cropped_to_even() {
+        let buffer = I420Buffer::new(1365, 767);
+        let frame = Nv12Frame::from_i420(&buffer, 0);
+        assert_eq!((frame.width, frame.height), (1364, 766));
+        assert_eq!(frame.data.len(), 1364 * 766 * 3 / 2);
     }
 
     #[test]
