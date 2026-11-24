@@ -111,29 +111,39 @@ curl https://live.microbates.com/health   # {"status":"ok"}
 ```
 
 > A imagem do token-server (`ghcr.io/heitormancini/sheeshcord-token-server`) é gerada pelo
-> workflow **Deploy**. Rode-o uma vez (Actions → Deploy → *Run workflow*) antes do primeiro
+> workflow **Publicar token-server**. Rode-o uma vez (Actions → *Run workflow*) antes do primeiro
 > `docker compose up`, ou deixe o pacote público (GitHub → Packages → sheeshcord-token-server →
 > *Package settings* → *Change visibility → Public*) para a VM baixar sem login.
 
-## 5. Deploy automático (GitHub Actions)
+## 5. Deploy automático (casa, IP dinâmico)
 
-O workflow `.github/workflows/deploy.yml` roda a cada push em `main` que mexa no
-token-server ou em `deploy/` (ou manualmente):
+O servidor roda em casa (HTTPS na porta **8443**, a Vivo bloqueia 80/443), então o GitHub não
+consegue acessá-lo. O fluxo é *pull*:
 
-1. compila a imagem **ARM64** do token-server num runner ARM e publica no GHCR;
-2. copia os arquivos de `deploy/` para `/opt/sheeshcord` via SSH;
-3. roda `docker compose pull && docker compose up -d` e checa `https://live.microbates.com/health`.
+1. `.github/workflows/deploy.yml` roda a cada push em `main` que mexa no token-server (ou
+   manualmente) e publica a imagem **x86_64** em `ghcr.io/heitormancini/sheeshcord-token-server`.
+2. Na máquina do servidor, o timer `sheeshcord-update` baixa a imagem a cada 5 minutos e recria
+   só o container do token-server se ela mudou.
+3. O timer `sheeshcord-ddns` mantém os registros A (`live`, `paper`) na Hostinger apontando para
+   o IP público atual (usa `HOSTINGER_API_TOKEN` do `.env`).
 
-Configure em **Settings → Secrets and variables → Actions**:
+Instalação (uma vez, como usuário com acesso ao Docker; precisa de `jq`):
 
-| Tipo     | Nome             | Valor                                                       |
-| -------- | ---------------- | ----------------------------------------------------------- |
-| Variable | `ORACLE_HOST`    | IP reservado (ou `live.microbates.com`)                     |
-| Variable | `ORACLE_USER`    | `ubuntu`                                                    |
-| Secret   | `ORACLE_SSH_KEY` | conteúdo da chave **privada** (`oracle_sheeshcord`)         |
+```bash
+install -m 755 deploy/sheeshcord-update.sh deploy/sheeshcord-ddns.sh ~/.local/bin/
+mkdir -p ~/.config/systemd/user
+cp deploy/sheeshcord-update.{service,timer} deploy/sheeshcord-ddns.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now sheeshcord-update.timer sheeshcord-ddns.timer
+loginctl enable-linger "$USER"   # roda no boot sem login
+```
 
-Sem `ORACLE_HOST`, o workflow só publica a imagem e pula o deploy. O `.env` com os segredos
-**nunca** sai da VM.
+Para a máquina baixar a imagem sem login, deixe o pacote público (GitHub → Packages →
+sheeshcord-token-server → *Package settings* → *Change visibility → Public*); se preferir
+privado, rode `docker login ghcr.io` com um PAT com `read:packages`.
+
+O `.env` com os segredos **nunca** sai da máquina. O Caddyfile e o compose de `/opt/sheeshcord`
+são mantidos à mão (Caddy com DNS-01 da Hostinger), por isso não são sobrescritos.
 
 ## 6. Usar no app
 

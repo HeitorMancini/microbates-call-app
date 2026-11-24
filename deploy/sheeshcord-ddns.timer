@@ -1,0 +1,9 @@
+[Unit]
+Description=Roda o DDNS do Sheeshcord a cada 2 minutos
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target

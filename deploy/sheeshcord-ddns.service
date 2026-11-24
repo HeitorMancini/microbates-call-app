@@ -1,0 +1,6 @@
+[Unit]
+Description=Sheeshcord DDNS (Hostinger)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/sheeshcord-ddns.sh

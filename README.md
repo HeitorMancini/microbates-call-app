@@ -34,7 +34,7 @@ gratuita da **Oracle Cloud** em `https://live.microbates.com`, protegido por uma
 | `crates/integration-tests`  | Testes contra um `livekit-server` real + token-server                    |
 | `crates/load-test`          | Teste de carga/qualidade headless ([README](crates/load-test/README.md))   |
 | `deploy/`                   | Docker Compose do servidor (LiveKit + token-server + Caddy) ([README](deploy/README.md)) |
-| `.github/workflows/`        | `ci.yml` (testes), `deploy.yml` (imagem ARM64 + deploy na VM), `release.yml` (instalador) |
+| `.github/workflows/`        | `ci.yml` (testes), `deploy.yml` (imagem do token-server no GHCR), `release.yml` (instalador) |
 
 Fluxo: UI → `join_room` → core pede token ao token-server → conecta no LiveKit →
 eventos (`room://state`, `room://participants`) voltam para a UI. O vídeo da tela é recebido
@@ -129,8 +129,8 @@ limite configurado não for atingido. Perda/latência podem ser simuladas com
 - **tauri-build**: gera o instalador NSIS (artefato `sheeshcord-windows-installer`);
 - **load**: só em `workflow_dispatch` ou semanalmente (segunda 06:00 UTC); artefato `load-report`.
 
-Outros workflows: **deploy.yml** (push em `main` mexendo no token-server/`deploy/`: imagem
-ARM64 no GHCR + `docker compose up` na VM por SSH) e **release.yml** (tag `v*` → instalador no Release).
+Outros workflows: **deploy.yml** (push em `main` mexendo no token-server: imagem
+x86_64 no GHCR; o servidor baixa sozinho, veja `deploy/README.md`) e **release.yml** (tag `v*` → instalador no Release).
 
 ## Limitações conhecidas
 
