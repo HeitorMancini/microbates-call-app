@@ -12,8 +12,7 @@ mod audio;
 #[cfg(feature = "fake")]
 mod fake;
 mod hub;
-// GPU screen encoder (Media Foundation); not yet wired into the transport.
-#[allow(dead_code, unused_imports)]
+// GPU screen encoder (Media Foundation).
 mod hwenc;
 mod screen;
 mod token;
@@ -31,6 +30,7 @@ pub use hub::{MediaHub, MediaStats, PreviewConfig, PreviewFrame, SAMPLES_PER_10M
 pub use screen::WgcScreen;
 pub use token::HttpTokenProvider;
 pub use transport::{
-    preset_max_bitrate, LiveKitTransport, TransportOptions, VIEWER_IDENTITY_PREFIX,
+    preset_max_bitrate, LiveKitTransport, ScreenEncoderInfo, TransportOptions,
+    VIEWER_IDENTITY_PREFIX,
 };
 pub use video::encode_jpeg;

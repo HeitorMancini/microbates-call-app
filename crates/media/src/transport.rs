@@ -28,6 +28,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 
 use crate::hub::{MediaHub, ScreenOutput, SAMPLE_RATE};
+use crate::hwenc::{self, HwConfig, HwProbe, HwScreenEncoder};
 
 /// Identity prefix of the WebView's subscribe-only video client (must match the
 /// token-server's `VIEWER_IDENTITY_PREFIX`); never shown in the roster.
@@ -35,14 +36,17 @@ pub const VIEWER_IDENTITY_PREFIX: &str = "viewer~";
 
 /// Encoder settings for the screen-share track.
 ///
-/// AV1 is the default (best quality per bit for screen content). H264 is the fallback when
-/// this host cannot encode AV1 or the AV1 encoder stays CPU-limited while sharing. Note that
-/// on Windows webrtc-sys 0.3 ships no hardware encoder (NVENC is Linux-only), so both run in
-/// software (libaom / OpenH264); VP8 is the last resort.
+/// AV1 is the default (best quality per bit for screen content), H264 the fallback. With
+/// `hardware_encoder` the screen is encoded on the GPU (Media Foundation: NVIDIA NVENC,
+/// AMD AMF or Intel QSV) in the first of those codecs the GPU can encode. Otherwise, or
+/// when no GPU encoder works, libwebrtc encodes in software (webrtc-sys 0.3 has no Windows
+/// hardware encoder: libaom / OpenH264), with VP8 as the last resort.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransportOptions {
     pub screen_codec: VideoCodec,
     pub fallback_codec: VideoCodec,
+    /// Encode the screen on the GPU when this machine has a working hardware encoder.
+    pub hardware_encoder: bool,
     /// Decode remote video natively into the hub's RGBA previews. The app leaves this off
     /// because the WebView renders video itself (hardware decode, no JPEG/IPC round trip).
     pub subscribe_video: bool,
@@ -53,9 +57,37 @@ impl Default for TransportOptions {
         Self {
             screen_codec: VideoCodec::AV1,
             fallback_codec: VideoCodec::H264,
+            hardware_encoder: true,
             subscribe_video: false,
         }
     }
+}
+
+/// Which encoder produces the published screen track.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreenEncoderInfo {
+    pub codec: VideoCodec,
+    /// Hardware MFT name (e.g. "AMDav1Encoder") or "libwebrtc" for software.
+    pub encoder: String,
+    pub hardware: bool,
+}
+
+impl ScreenEncoderInfo {
+    fn software(codec: VideoCodec) -> Self {
+        Self {
+            codec,
+            encoder: "libwebrtc".to_owned(),
+            hardware: false,
+        }
+    }
+}
+
+/// Codecs to probe on the GPU, in preference order (empty: hardware encoding disabled).
+fn hardware_candidates(options: &TransportOptions) -> Vec<VideoCodec> {
+    if !options.hardware_encoder {
+        return Vec::new();
+    }
+    hwenc::hardware_codecs(&[options.screen_codec, options.fallback_codec])
 }
 
 /// Idle capture time after which the last screen frame is re-sent.
@@ -85,7 +117,11 @@ fn screen_codec_order(
     order
 }
 
-fn screen_publish_options(preset: ScreenPreset, codec: VideoCodec) -> TrackPublishOptions {
+fn screen_publish_options(
+    preset: ScreenPreset,
+    codec: VideoCodec,
+    backend: VideoEncoderBackend,
+) -> TrackPublishOptions {
     TrackPublishOptions {
         source: TrackSource::Screenshare,
         video_codec: codec,
@@ -94,7 +130,7 @@ fn screen_publish_options(preset: ScreenPreset, codec: VideoCodec) -> TrackPubli
             max_bitrate: preset_max_bitrate(preset),
             max_framerate: f64::from(preset.fps()),
         }),
-        video_encoder: VideoEncoderBackend::Auto,
+        video_encoder: backend,
         // Games: keep the frame rate smooth and let the resolution give way first.
         degradation_preference: Some(DegradationPreference::MaintainFramerate),
         ..Default::default()
@@ -107,6 +143,7 @@ async fn publish_screen_track(
     source: &NativeVideoSource,
     preset: ScreenPreset,
     codecs: &[VideoCodec],
+    backend: VideoEncoderBackend,
 ) -> Result<(LocalTrackPublication, LocalVideoTrack, VideoCodec), BoxError> {
     let mut last_error: Option<BoxError> = None;
     for &codec in codecs {
@@ -115,7 +152,7 @@ async fn publish_screen_track(
         match local
             .publish_track(
                 LocalTrack::Video(track.clone()),
-                screen_publish_options(preset, codec),
+                screen_publish_options(preset, codec, backend),
             )
             .await
         {
@@ -143,8 +180,12 @@ pub fn preset_max_bitrate(preset: ScreenPreset) -> u64 {
 
 struct ScreenTrack {
     publication: LocalTrackPublication,
-    /// Frame repeats, encoder stats and the CPU-limited codec fallback.
+    /// Frame repeats, encoder stats and the codec / software fallback.
     maintenance: JoinHandle<()>,
+    info: ScreenEncoderInfo,
+    /// The GPU encoder thread, while the screen is hardware encoded.
+    #[allow(dead_code)] // Read by the hardware failure check.
+    hw: Option<Arc<HwScreenEncoder>>,
 }
 
 struct Active {
@@ -191,6 +232,60 @@ impl LiveKitTransport {
 
     pub fn hub(&self) -> &MediaHub {
         &self.hub
+    }
+
+    /// The encoder of the currently published screen track, if any.
+    pub async fn screen_encoder(&self) -> Option<ScreenEncoderInfo> {
+        let guard = self.active.lock().await;
+        Some(guard.as_ref()?.screen.as_ref()?.info.clone())
+    }
+
+    /// Probes the GPU and publishes a pre-encoded screen track fed by it. `None` when no
+    /// hardware encoder works or LiveKit rejects the track (the caller uses software).
+    async fn publish_screen_hardware(
+        &self,
+        local: &LocalParticipant,
+        preset: ScreenPreset,
+    ) -> Option<HwPublish> {
+        let candidates = hardware_candidates(&self.options);
+        if candidates.is_empty() {
+            return None;
+        }
+        let (width, height) = (preset.width(), preset.height());
+        let cfg = HwConfig {
+            fps: preset.fps(),
+            max_bitrate_bps: preset_max_bitrate(preset) as u32,
+        };
+        let HwProbe {
+            codec,
+            encoder,
+            vendor,
+        } = tokio::task::spawn_blocking(move || hwenc::probe(&candidates, width, height, cfg))
+            .await
+            .ok()??;
+        let source = NativeVideoSource::new_encoded(VideoResolution { width, height });
+        let (publication, track, codec) = publish_screen_track(
+            local,
+            &source,
+            preset,
+            &[codec],
+            VideoEncoderBackend::PreEncoded,
+        )
+        .await
+        .map_err(|e| tracing::warn!(error = %e, "pre-encoded screen publish failed"))
+        .ok()?;
+        tracing::info!(codec = codec.as_str(), encoder = %encoder, ?vendor, "screen encoding on the GPU");
+        Some(HwPublish {
+            publication,
+            track,
+            encoder: Arc::new(HwScreenEncoder::start(codec, cfg, source.clone())),
+            source,
+            info: ScreenEncoderInfo {
+                codec,
+                encoder,
+                hardware: true,
+            },
+        })
     }
 
     async fn close(&self, active: Active) {
@@ -377,6 +472,38 @@ impl Transport for LiveKitTransport {
         }
 
         let (width, height) = (preset.width(), preset.height());
+        let local = active.room.local_participant();
+        if let Some(HwPublish {
+            publication,
+            track,
+            encoder: hw,
+            source,
+            info,
+        }) = self.publish_screen_hardware(&local, preset).await
+        {
+            self.hub
+                .set_screen_sink(Some((ScreenOutput::Feed(hw.feed()), width, height)));
+            let maintenance = tokio::spawn(maintain_screen(ScreenJob {
+                hub: self.hub.clone(),
+                active: Arc::downgrade(&self.active),
+                source,
+                preset,
+                // The GPU is never CPU-limited; hardware failures are handled separately.
+                fallback: Vec::new(),
+                track,
+                info: info.clone(),
+                sid: publication.sid(),
+            }));
+            active.screen = Some(ScreenTrack {
+                publication,
+                maintenance,
+                info,
+                hw: Some(hw),
+            });
+            return Ok(());
+        }
+
+        tracing::info!("screen encoding in software");
         let source = NativeVideoSource::new(VideoResolution { width, height }, true);
         let producible = LkRuntime::instance()
             .pc_factory()
@@ -386,11 +513,12 @@ impl Transport for LiveKitTransport {
             self.options.fallback_codec,
             &producible,
         );
-        let local = active.room.local_participant();
         let (publication, track, codec) =
-            publish_screen_track(&local, &source, preset, &codecs).await?;
+            publish_screen_track(&local, &source, preset, &codecs, VideoEncoderBackend::Auto)
+                .await?;
         self.hub
             .set_screen_sink(Some((ScreenOutput::Source(source.clone()), width, height)));
+        let info = ScreenEncoderInfo::software(codec);
         let maintenance = tokio::spawn(maintain_screen(ScreenJob {
             hub: self.hub.clone(),
             active: Arc::downgrade(&self.active),
@@ -402,12 +530,14 @@ impl Transport for LiveKitTransport {
                 Vec::new()
             },
             track,
-            codec,
+            info: info.clone(),
             sid: publication.sid(),
         }));
         active.screen = Some(ScreenTrack {
             publication,
             maintenance,
+            info,
+            hw: None,
         });
         Ok(())
     }
@@ -438,8 +568,18 @@ struct ScreenJob {
     /// Codecs to switch to if the current encoder stays CPU-limited (empty: never switch).
     fallback: Vec<VideoCodec>,
     track: LocalVideoTrack,
-    codec: VideoCodec,
+    info: ScreenEncoderInfo,
     sid: TrackSid,
+}
+
+/// A screen track published as pre-encoded frames from the GPU encoder.
+struct HwPublish {
+    publication: LocalTrackPublication,
+    track: LocalVideoTrack,
+    encoder: Arc<HwScreenEncoder>,
+    /// The pre-encoded source the encoder thread writes to.
+    source: NativeVideoSource,
+    info: ScreenEncoderInfo,
 }
 
 /// Keeps the published screen healthy: repeats the last frame while capture is idle,
@@ -460,7 +600,7 @@ async fn maintain_screen(mut job: ScreenJob) {
         if job.active.strong_count() == 0 {
             return;
         }
-        let limited = report_screen_encoder(&job.track, job.codec, first_report).await;
+        let limited = report_screen_encoder(&job.track, &job.info, first_report).await;
         first_report = false;
         cpu_limited = if limited { cpu_limited + 1 } else { 0 };
         if SWITCH_ON_CPU_LIMIT && cpu_limited >= CPU_LIMITED_CHECKS && !job.fallback.is_empty() {
@@ -474,7 +614,11 @@ async fn maintain_screen(mut job: ScreenJob) {
 }
 
 /// Logs the screen encoder stats; returns whether the encoder is CPU-limited.
-async fn report_screen_encoder(track: &LocalVideoTrack, codec: VideoCodec, first: bool) -> bool {
+async fn report_screen_encoder(
+    track: &LocalVideoTrack,
+    info: &ScreenEncoderInfo,
+    first: bool,
+) -> bool {
     let stats = match track.get_stats().await {
         Ok(stats) => stats,
         Err(e) => {
@@ -493,9 +637,10 @@ async fn report_screen_encoder(track: &LocalVideoTrack, codec: VideoCodec, first
         macro_rules! report {
             ($level:ident) => {
                 tracing::$level!(
-                    codec = codec.as_str(),
+                    codec = info.codec.as_str(),
+                    gpu_encoder = info.hardware.then_some(info.encoder.as_str()),
                     encoder = %o.encoder_implementation,
-                    hardware = o.power_efficient_encoder,
+                    hardware = info.hardware || o.power_efficient_encoder,
                     fps = o.frames_per_second,
                     width = o.frame_width,
                     height = o.frame_height,
@@ -535,20 +680,29 @@ async fn switch_screen_codec(job: &mut ScreenJob) -> bool {
         return false;
     }
     tracing::warn!(
-        from = job.codec.as_str(),
+        from = job.info.codec.as_str(),
         "screen encoder is CPU-limited; switching codec"
     );
     let local = active.room.local_participant();
     if let Err(e) = local.unpublish_track(&job.sid).await {
         tracing::warn!(error = %e, "failed to unpublish the CPU-limited screen track");
     }
-    match publish_screen_track(&local, &job.source, job.preset, &job.fallback).await {
+    match publish_screen_track(
+        &local,
+        &job.source,
+        job.preset,
+        &job.fallback,
+        VideoEncoderBackend::Auto,
+    )
+    .await
+    {
         Ok((publication, track, codec)) => {
             job.sid = publication.sid();
             job.track = track;
-            job.codec = codec;
+            job.info = ScreenEncoderInfo::software(codec);
             job.fallback.clear();
             screen.publication = publication;
+            screen.info = job.info.clone();
             true
         }
         Err(e) => {
@@ -697,6 +851,25 @@ async fn read_video(mut stream: NativeVideoStream, participant: String, hub: Med
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hardware_candidates_keep_preference_order() {
+        let on = TransportOptions::default();
+        assert_eq!(
+            hardware_candidates(&on),
+            vec![VideoCodec::AV1, VideoCodec::H264]
+        );
+        let vp8_first = TransportOptions {
+            screen_codec: VideoCodec::VP8,
+            ..on
+        };
+        assert_eq!(hardware_candidates(&vp8_first), vec![VideoCodec::H264]);
+        let off = TransportOptions {
+            hardware_encoder: false,
+            ..on
+        };
+        assert!(hardware_candidates(&off).is_empty());
+    }
 
     #[test]
     fn screen_codecs_fall_back_to_h264_when_av1_cannot_be_encoded() {

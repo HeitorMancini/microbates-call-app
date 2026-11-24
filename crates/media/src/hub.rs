@@ -123,7 +123,6 @@ pub(crate) type ScreenFeed = Arc<dyn Fn(&I420Buffer, i64) + Send + Sync>;
 /// Where screen frames go: libwebrtc's own encoder or an external one.
 pub(crate) enum ScreenOutput {
     Source(NativeVideoSource),
-    #[allow(dead_code)] // Used by the GPU encoder once it is wired in.
     Feed(ScreenFeed),
 }
 

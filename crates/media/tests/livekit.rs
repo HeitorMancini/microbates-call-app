@@ -21,7 +21,12 @@ struct Client {
     session: Session,
 }
 
-async fn join(tokens: &HttpTokenProvider, token_url: &str, name: &str) -> Client {
+async fn join(
+    tokens: &HttpTokenProvider,
+    token_url: &str,
+    name: &str,
+    hardware_encoder: bool,
+) -> Client {
     let creds = tokens
         .fetch_token(&JoinParams {
             server_url: token_url.to_owned(),
@@ -36,6 +41,7 @@ async fn join(tokens: &HttpTokenProvider, token_url: &str, name: &str) -> Client
         hub.clone(),
         TransportOptions {
             subscribe_video: true,
+            hardware_encoder,
             ..Default::default()
         },
     );
@@ -78,8 +84,8 @@ async fn two_clients_exchange_tone_and_test_pattern() {
         .expect("start token-server");
     let tokens = HttpTokenProvider::default();
 
-    let mut alice = join(&tokens, &token_server.url(), "alice").await;
-    let mut bob = join(&tokens, &token_server.url(), "bob").await;
+    let mut alice = join(&tokens, &token_server.url(), "alice", false).await;
+    let mut bob = join(&tokens, &token_server.url(), "bob", false).await;
 
     // Alice was already in the room, so Bob sees her in the initial snapshot or right after.
     let alice_id = alice.session.local_identity.clone();
@@ -159,11 +165,72 @@ async fn two_clients_exchange_tone_and_test_pattern() {
     let stats = bob_hub.stats();
     eprintln!("bob stats: {stats:?}");
     eprintln!("alice stats: {:?}", alice.hub.stats());
+    let info = alice
+        .transport
+        .screen_encoder()
+        .await
+        .expect("screen encoder info");
+    assert!(
+        !info.hardware,
+        "hardware_encoder=false must encode in software: {info:?}"
+    );
 
     alice.transport.unpublish_screen().await.unwrap();
     alice.screen.stop().await;
     alice.audio.stop().await;
     bob.audio.stop().await;
+    alice.transport.disconnect().await;
+    bob.transport.disconnect().await;
+}
+
+/// Shares alice's fake screen to bob with the GPU encoder enabled. Set `MEDIA_EXPECT_HW`
+/// on machines with a hardware encoder to require that it is used.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn screen_share_uses_gpu_encoder_when_available() {
+    let Some(bin) = find_livekit_server() else {
+        eprintln!("SKIPPED: livekit-server not found (set LIVEKIT_SERVER_BIN or add it to PATH)");
+        return;
+    };
+    let log = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("media-gpu-server.log");
+    let server = LiveKitServer::start(&bin, &log)
+        .await
+        .expect("start livekit-server");
+    let token_server = TokenServer::start(&server.ws_url(), API_SECRET)
+        .await
+        .expect("start token-server");
+    let tokens = HttpTokenProvider::default();
+    let alice = join(&tokens, &token_server.url(), "alice", true).await;
+    let bob = join(&tokens, &token_server.url(), "bob", true).await;
+
+    alice
+        .screen
+        .start(FAKE_MONITOR_ID, ScreenPreset::P720Fps30)
+        .await
+        .unwrap();
+    alice
+        .transport
+        .publish_screen(ScreenPreset::P720Fps30)
+        .await
+        .unwrap();
+    let bob_hub = bob.hub.clone();
+    wait_for("remote video", Duration::from_secs(20), || {
+        bob_hub.stats().remote_video_frames > 30
+    })
+    .await;
+
+    let info = alice
+        .transport
+        .screen_encoder()
+        .await
+        .expect("screen encoder info");
+    eprintln!("screen encoder: {info:?}");
+    if std::env::var_os("MEDIA_EXPECT_HW").is_some() {
+        assert!(info.hardware, "expected a GPU encoder, got {info:?}");
+    }
+
+    alice.transport.unpublish_screen().await.unwrap();
+    assert!(alice.transport.screen_encoder().await.is_none());
+    alice.screen.stop().await;
     alice.transport.disconnect().await;
     bob.transport.disconnect().await;
 }
