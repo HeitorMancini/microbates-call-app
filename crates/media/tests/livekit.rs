@@ -235,6 +235,64 @@ async fn screen_share_uses_gpu_encoder_when_available() {
     bob.transport.disconnect().await;
 }
 
+/// Measures the frame rate bob receives from a 1080p60 GPU-encoded share. Run with
+/// `--ignored` on machines with a hardware encoder.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "performance check; needs a GPU encoder"]
+async fn screen_share_sustains_1080p60_on_gpu() {
+    let Some(bin) = find_livekit_server() else {
+        eprintln!("SKIPPED: livekit-server not found (set LIVEKIT_SERVER_BIN or add it to PATH)");
+        return;
+    };
+    let log = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("media-perf-server.log");
+    let server = LiveKitServer::start(&bin, &log)
+        .await
+        .expect("start livekit-server");
+    let token_server = TokenServer::start(&server.ws_url(), API_SECRET)
+        .await
+        .expect("start token-server");
+    let tokens = HttpTokenProvider::default();
+    let alice = join(&tokens, &token_server.url(), "alice", true).await;
+    let bob = join(&tokens, &token_server.url(), "bob", true).await;
+
+    alice
+        .screen
+        .start(FAKE_MONITOR_ID, ScreenPreset::P1080Fps60)
+        .await
+        .unwrap();
+    alice
+        .transport
+        .publish_screen(ScreenPreset::P1080Fps60)
+        .await
+        .unwrap();
+    let info = alice
+        .transport
+        .screen_encoder()
+        .await
+        .expect("encoder info");
+    if !info.hardware {
+        eprintln!("SKIPPED: no GPU encoder on this machine ({info:?})");
+    } else {
+        let bob_hub = bob.hub.clone();
+        wait_for("remote video", Duration::from_secs(20), || {
+            bob_hub.stats().remote_video_frames > 0
+        })
+        .await;
+        let window = Duration::from_secs(10);
+        let before = bob_hub.stats().remote_video_frames;
+        tokio::time::sleep(window).await;
+        let frames = bob_hub.stats().remote_video_frames - before;
+        let fps = frames as f64 / window.as_secs_f64();
+        eprintln!("{info:?}: {fps:.1} fps at 1080p60");
+        assert!(fps >= 50.0, "{info:?}: {fps:.1} fps");
+    }
+
+    alice.transport.unpublish_screen().await.unwrap();
+    alice.screen.stop().await;
+    alice.transport.disconnect().await;
+    bob.transport.disconnect().await;
+}
+
 /// When the GPU encoder dies mid-share the screen is republished in software and bob keeps
 /// receiving video.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

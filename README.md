@@ -137,13 +137,25 @@ ARM64 no GHCR + `docker compose up` na VM por SSH) e **release.yml** (tag `v*` �
 - Somente Windows (captura via Windows Graphics Capture; instalador NSIS).
 - Sem TURN: quem estiver numa rede que bloqueia UDP usa ICE/TCP (porta 7881), com latência maior.
 - A senha do grupo fica salva em texto puro no `localStorage` do app.
-- O SDK Rust do LiveKit tem menos recursos que o JS (encode por hardware/simulcast
-  dependem da versão do libwebrtc embutido).
-- A tela é enviada em AV1 (libaom), com fallback para H.264 quando o host não codifica AV1
-  (fora do Windows, também quando o encoder fica limitado por CPU); VP8 é o último recurso.
-  No Windows o libwebrtc embutido não tem encoder por hardware: tudo roda em software e o
-  AV1 é o mais rápido (load-test 1080p30: AV1 ~23 fps, VP8 ~11, H.264 ~6 num Ryzen 7 5700X).
-  A tela é decodificada pelo WebView; o desempenho real em 1080p60 depende da CPU do host.
+- O SDK Rust do LiveKit tem menos recursos que o JS (simulcast depende da versão do
+  libwebrtc embutido; a tela codificada na GPU é publicada sem simulcast).
+- A tela é codificada na GPU via Media Foundation (NVIDIA NVENC, AMD AMF, Intel QSV), na
+  ordem AV1 na GPU → H.264 na GPU → software (libwebrtc: AV1/libaom → H.264/OpenH264 → VP8).
+  Se o encoder da GPU falhar no meio do compartilhamento, a tela é republicada em software.
+  `SHEESHCORD_HW_ENCODER=0` força software. Suporte esperado:
+
+  | GPU | Codec na GPU | 1080p60 medido |
+  |---|---|---|
+  | AMD RX 7000+ (testado: RX 9060 XT) | AV1 (`AMDav1Encoder`) | 60 fps |
+  | AMD RX 5000/6000 | H.264 | não medido |
+  | NVIDIA RTX 40+ | AV1 | não medido |
+  | NVIDIA GTX 600+ / RTX 20/30 | H.264 | não medido |
+  | Intel Arc / Meteor Lake+ | AV1 | não medido |
+  | sem encoder na GPU | software | load-test 1080p30: AV1 ~23 fps, VP8 ~11, H.264 ~6 (Ryzen 7 5700X) |
+
+  A tela é decodificada pelo WebView (AV1 em software via dav1d se a GPU do espectador não
+  decodificar AV1). Para conferir o encoder usado, rode com `RUST_LOG=media=info` e procure
+  `screen encoding on the GPU`.
 - Com muitos espectadores, a banda de saída da VM e a latência até São Paulo limitam a qualidade.
 - Captura real de áudio/tela não roda no CI; lá são usadas fontes sintéticas e a UI em modo mock.
 - O teste de carga roda todos os clientes numa só máquina (mede o SFU/link local, não o upload real do host).

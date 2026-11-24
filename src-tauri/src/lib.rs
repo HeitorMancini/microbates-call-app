@@ -42,6 +42,17 @@ fn fake_media_enabled() -> bool {
     std::env::var(FAKE_MEDIA_ENV).is_ok_and(|v| v == "1")
 }
 
+/// Liga/desliga a codificação da tela na GPU (`SHEESHCORD_HW_ENCODER`); ligada por padrão.
+const HW_ENCODER_ENV: &str = "SHEESHCORD_HW_ENCODER";
+
+fn hardware_encoder_enabled(value: Option<&str>) -> bool {
+    !value.is_some_and(|v| {
+        ["0", "off", "false"]
+            .iter()
+            .any(|off| v.trim().eq_ignore_ascii_case(off))
+    })
+}
+
 /// Monta as dependências reais (LiveKit + token-server HTTP) com fontes de mídia reais
 /// ou sintéticas.
 pub fn media_dependencies(hub: &MediaHub, fake: bool) -> Dependencies {
@@ -61,7 +72,12 @@ pub fn media_dependencies(hub: &MediaHub, fake: bool) -> Dependencies {
         tokens: Arc::new(HttpTokenProvider::new()),
         transport: Arc::new(LiveKitTransport::with_options(
             hub.clone(),
-            TransportOptions::default(),
+            TransportOptions {
+                hardware_encoder: hardware_encoder_enabled(
+                    std::env::var(HW_ENCODER_ENV).ok().as_deref(),
+                ),
+                ..TransportOptions::default()
+            },
         )),
         audio,
         screen,
@@ -188,4 +204,18 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Sheeshcord");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hardware_encoder_env_switch() {
+        assert!(hardware_encoder_enabled(None));
+        assert!(hardware_encoder_enabled(Some("1")));
+        for off in ["0", "off", "FALSE"] {
+            assert!(!hardware_encoder_enabled(Some(off)));
+        }
+    }
 }

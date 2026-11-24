@@ -56,9 +56,13 @@ protocolo customizado) com frames brutos.
 - **AEC**: o APM recebe o sinal de referência, mas o atraso fixo (`stream_delay_ms = 60`) não é
   medido; com caixas de som pode haver eco residual. Só validado com testes unitários/fakes,
   não com hardware real. Alternativa: `PlatformAudio` do SDK (ADM do WebRTC com AEC integrado).
-- **Encode por hardware**: o libwebrtc 0.3.53 só compila NVENC no Linux; no Windows não há
-  NVENC/QSV/AMF e tudo é software (libaom AV1, OpenH264, libvpx). Medido no load-test
-  1080p30: AV1 ~23 fps, VP8 ~11, H.264 ~6 — por isso AV1 é o padrão da tela.
+- **Encode por hardware**: o libwebrtc 0.3.53 só compila NVENC no Linux, então a tela é
+  codificada fora dele, em `hwenc.rs` (MFTs de hardware do Media Foundation: NVENC, AMF, QSV,
+  com GPUs dedicadas antes da Intel), e publicada como track pré-codificado
+  (`VideoEncoderBackend::PreEncoded`). Ordem: AV1 na GPU → H.264 na GPU → software (libaom,
+  OpenH264, libvpx). A conversão BGRA→I420→NV12 ainda roda na CPU (sem upload D3D11
+  zero-copy). Medido: AV1 na RX 9060 XT 60 fps a 1080p60; em software (load-test 1080p30)
+  AV1 ~23 fps, VP8 ~11, H.264 ~6. NVIDIA não foi validada nesta máquina.
 - **Captura**: WGC exige Windows 10 1903+; jogos em tela cheia exclusiva podem não ser capturados;
   borda amarela desativada (`WithoutBorder`) pode ser ignorada em versões antigas do Windows.
 - **Reamostragem linear** (qualidade aceitável para voz; trocar por `rubato` se necessário).
