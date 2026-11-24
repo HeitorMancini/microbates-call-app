@@ -1,6 +1,6 @@
 //! Real media implementations of the `sheeshcord_core` traits.
 //!
-//! * [`LiveKitTransport`]: LiveKit Rust SDK (libwebrtc: Opus, VP8/H264, APM).
+//! * [`LiveKitTransport`]: LiveKit Rust SDK (libwebrtc: Opus, AV1/H264/VP8, APM).
 //! * [`HttpTokenProvider`]: `POST /token` on the Sheeshcord token server.
 //! * [`CpalAudio`]: microphone/speakers via `cpal` + WebRTC audio processing.
 //! * [`WgcScreen`]: Windows.Graphics.Capture screen/window capture (Windows only).
@@ -12,6 +12,9 @@ mod audio;
 #[cfg(feature = "fake")]
 mod fake;
 mod hub;
+// GPU screen encoder (Media Foundation); not yet wired into the transport.
+#[allow(dead_code, unused_imports)]
+mod hwenc;
 mod screen;
 mod token;
 mod transport;

@@ -42,7 +42,7 @@ export const SCREEN_PRESETS: readonly { id: ScreenPreset; label: string; hint: s
   { id: '720p30', label: '720p · 30 fps', hint: 'Conexão fraca ou muita gente vendo' },
 ];
 
-export type VideoStatus = 'connecting' | 'waiting' | 'playing' | 'error';
+export type VideoStatus = 'connecting' | 'waiting' | 'playing' | 'stalled' | 'error';
 
 export interface VideoStats {
   width: number;

@@ -18,7 +18,7 @@ path = "src/main.rs"
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-livekit = "0.10"
+livekit = { version = "0.10", features = ["native-tls"] }
 livekit-api = { version = "0.10", default-features = false, features = ["access-token"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

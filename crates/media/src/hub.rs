@@ -116,10 +116,23 @@ impl Mixer {
     }
 }
 
+/// Receives screen frames for an encoder outside libwebrtc (hardware encoder), with the
+/// capture timestamp in microseconds.
+pub(crate) type ScreenFeed = Arc<dyn Fn(&I420Buffer, i64) + Send + Sync>;
+
+/// Where screen frames go: libwebrtc's own encoder or an external one.
+pub(crate) enum ScreenOutput {
+    Source(NativeVideoSource),
+    #[allow(dead_code)] // Used by the GPU encoder once it is wired in.
+    Feed(ScreenFeed),
+}
+
 struct ScreenSink {
-    source: NativeVideoSource,
+    output: ScreenOutput,
     max_width: u32,
     max_height: u32,
+    /// Last frame handed to the encoder and when, for [`MediaHub::repeat_screen_if_idle`].
+    last: Option<(I420Buffer, Instant)>,
 }
 
 struct PreviewThrottle {
@@ -223,11 +236,12 @@ impl MediaHub {
 
     // ---- screen -> transport ----------------------------------------------------------
 
-    pub(crate) fn set_screen_sink(&self, source: Option<(NativeVideoSource, u32, u32)>) {
-        *lock(&self.inner.screen) = source.map(|(source, max_width, max_height)| ScreenSink {
-            source,
+    pub(crate) fn set_screen_sink(&self, sink: Option<(ScreenOutput, u32, u32)>) {
+        *lock(&self.inner.screen) = sink.map(|(output, max_width, max_height)| ScreenSink {
+            output,
             max_width,
             max_height,
+            last: None,
         });
     }
 
@@ -243,31 +257,59 @@ impl MediaHub {
     /// Feeds one captured BGRA frame (`stride` bytes per row) to the published screen
     /// track, downscaling it to fit the active preset. Returns `false` when not sharing.
     pub fn push_screen_bgra(&self, width: u32, height: u32, stride: u32, data: &[u8]) -> bool {
-        let frame = {
-            let guard = lock(&self.inner.screen);
-            let Some(sink) = guard.as_ref() else {
-                return false;
-            };
-            let mut i420 = bgra_to_i420(width, height, stride, data);
-            let (w, h) = fit_within(width, height, sink.max_width, sink.max_height);
-            if (w, h) != (i420.width(), i420.height()) {
-                i420 = scale_i420(&mut i420, w, h);
-            }
-            let mut frame = VideoFrame::new(VideoRotation::VideoRotation0, i420);
-            frame.timestamp_us = frame_timestamp(&self.inner.started);
-            sink.source.capture_frame(&frame);
-            frame
+        let local = lock(&self.inner.local_identity).clone();
+        let mut guard = lock(&self.inner.screen);
+        let Some(sink) = guard.as_mut() else {
+            return false;
         };
+        let mut i420 = bgra_to_i420(width, height, stride, data);
+        let (w, h) = fit_within(width, height, sink.max_width, sink.max_height);
+        if (w, h) != (i420.width(), i420.height()) {
+            i420 = scale_i420(&mut i420, w, h);
+        }
+        self.send_screen(sink, i420);
         self.inner
             .counters
             .screen_frames_sent
             .fetch_add(1, Ordering::Relaxed);
-        let local = lock(&self.inner.local_identity).clone();
-        if let Some(id) = local {
-            let mut buffer = frame.buffer;
-            self.maybe_preview(&id, &mut buffer);
+        if let (Some(id), Some((buffer, _))) = (local, sink.last.as_mut()) {
+            self.maybe_preview(&id, buffer);
         }
         true
+    }
+
+    /// Re-sends the last screen frame once capture has been idle for `idle`.
+    ///
+    /// WGC only emits frames when the screen changes, and the encoder can only answer a
+    /// keyframe request (PLI from a viewer that just joined or lost packets) on its next
+    /// input frame: without repeats a static screen leaves viewers waiting for an image.
+    pub fn repeat_screen_if_idle(&self, idle: Duration) -> bool {
+        let mut guard = lock(&self.inner.screen);
+        let Some(sink) = guard.as_mut() else {
+            return false;
+        };
+        let Some((last, at)) = sink.last.as_mut() else {
+            return false;
+        };
+        if at.elapsed() < idle {
+            return false;
+        }
+        let (w, h) = (last.width(), last.height());
+        let copy = scale_i420(last, w, h);
+        self.send_screen(sink, copy);
+        true
+    }
+
+    fn send_screen(&self, sink: &mut ScreenSink, buffer: I420Buffer) {
+        let mut frame = VideoFrame::new(VideoRotation::VideoRotation0, buffer);
+        frame.timestamp_us = frame_timestamp(&self.inner.started);
+        match &sink.output {
+            ScreenOutput::Source(source) => {
+                source.capture_frame(&frame);
+            }
+            ScreenOutput::Feed(feed) => feed(&frame.buffer, frame.timestamp_us),
+        }
+        sink.last = Some((frame.buffer, Instant::now()));
     }
 
     // ---- remote media -----------------------------------------------------------------
@@ -382,6 +424,31 @@ mod tests {
         assert!(hub.push_mic(&[7; SAMPLES_PER_10MS]));
         assert_eq!(rx.recv().await.unwrap()[0], 7);
         assert_eq!(hub.stats().mic_chunks_sent, 1);
+    }
+
+    #[test]
+    fn idle_screen_repeats_the_last_frame() {
+        let hub = MediaHub::default();
+        assert!(!hub.repeat_screen_if_idle(Duration::ZERO), "not sharing");
+        let fed = Arc::new(Mutex::new(Vec::new()));
+        let sink = fed.clone();
+        let feed: ScreenFeed = Arc::new(move |frame: &I420Buffer, timestamp_us| {
+            lock(&sink).push((frame.width(), frame.height(), timestamp_us));
+        });
+        hub.set_screen_sink(Some((ScreenOutput::Feed(feed), 64, 32)));
+        assert!(!hub.repeat_screen_if_idle(Duration::ZERO), "no frame yet");
+        assert!(hub.push_screen_bgra(64, 32, 64 * 4, &vec![0x80; 64 * 32 * 4]));
+        assert!(!hub.repeat_screen_if_idle(Duration::from_secs(3600)));
+        assert!(hub.repeat_screen_if_idle(Duration::ZERO));
+        assert_eq!(
+            hub.stats().screen_frames_sent,
+            1,
+            "repeats are not captures"
+        );
+        let fed = lock(&fed);
+        assert_eq!(fed.len(), 2);
+        assert!(fed.iter().all(|&(w, h, _)| (w, h) == (64, 32)));
+        assert!(fed[1].2 >= fed[0].2, "repeats carry a fresh timestamp");
     }
 
     #[test]

@@ -56,9 +56,9 @@ protocolo customizado) com frames brutos.
 - **AEC**: o APM recebe o sinal de referência, mas o atraso fixo (`stream_delay_ms = 60`) não é
   medido; com caixas de som pode haver eco residual. Só validado com testes unitários/fakes,
   não com hardware real. Alternativa: `PlatformAudio` do SDK (ADM do WebRTC com AEC integrado).
-- **Encode por hardware**: VP8 é software. H264 com `VideoEncoderBackend::Auto` pode usar
-  NVENC/QSV/AMF dependendo da build do libwebrtc — não testado; 1080p60 em VP8 software pode
-  custar bastante CPU em jogos.
+- **Encode por hardware**: o libwebrtc 0.3.53 só compila NVENC no Linux; no Windows não há
+  NVENC/QSV/AMF e tudo é software (libaom AV1, OpenH264, libvpx). Medido no load-test
+  1080p30: AV1 ~23 fps, VP8 ~11, H.264 ~6 — por isso AV1 é o padrão da tela.
 - **Captura**: WGC exige Windows 10 1903+; jogos em tela cheia exclusiva podem não ser capturados;
   borda amarela desativada (`WithoutBorder`) pode ser ignorada em versões antigas do Windows.
 - **Reamostragem linear** (qualidade aceitável para voz; trocar por `rubato` se necessário).

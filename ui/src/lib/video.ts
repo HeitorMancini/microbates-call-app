@@ -12,6 +12,44 @@ import type { VideoSession, VideoStats, VideoUpdate, ViewerCredentials } from '.
 const STATS_INTERVAL_MS = 1000;
 /** Sem vídeo depois disso, o visualizador avisa em vez de ficar "aguardando" para sempre. */
 const WAIT_WARNING_MS = 10_000;
+/** Quadros parados por mais que isso contam como imagem travada. */
+const STALL_MS = 2000;
+/** Registra as estatísticas de recepção no console a cada N leituras. */
+const LOG_EVERY_POLLS = 5;
+
+/** Campos de `inbound-rtp` usados aqui (`getReceiverStats()` não traz freezeCount nem keyFramesDecoded). */
+interface InboundVideoStats {
+  bytesReceived?: number;
+  framesDecoded?: number;
+  frameWidth?: number;
+  frameHeight?: number;
+  packetsLost?: number;
+  freezeCount?: number;
+  keyFramesDecoded?: number;
+  pliCount?: number;
+  nackCount?: number;
+  decoderImplementation?: string;
+}
+
+async function inboundVideoStats(track: RemoteVideoTrack): Promise<InboundVideoStats | undefined> {
+  const report = await track.getRTCStatsReport();
+  let found: InboundVideoStats | undefined;
+  report?.forEach((s: { type?: string; kind?: string } & InboundVideoStats) => {
+    if (s.type === 'inbound-rtp' && s.kind === 'video') found = s;
+  });
+  return found;
+}
+
+function diagnostics(s: InboundVideoStats) {
+  return {
+    packetsLost: s.packetsLost,
+    freezeCount: s.freezeCount,
+    keyFramesDecoded: s.keyFramesDecoded,
+    pliCount: s.pliCount,
+    nackCount: s.nackCount,
+    decoder: s.decoderImplementation,
+  };
+}
 
 function screenPublication(p: RemoteParticipant | undefined): RemoteTrackPublication | undefined {
   return p?.getTrackPublication(Track.Source.ScreenShare) as RemoteTrackPublication | undefined;
@@ -19,7 +57,7 @@ function screenPublication(p: RemoteParticipant | undefined): RemoteTrackPublica
 
 /**
  * Conecta à sala como visualizador (somente assinatura) e liga a tela de cada participante a um
- * `<video>`: a decodificação H.264/VP8 fica com a WebView (aceleração de hardware) e não há
+ * `<video>`: a decodificação AV1/H.264/VP8 fica com a WebView (aceleração de hardware) e não há
  * conversão para imagem nem passagem de quadros pelo IPC do Tauri.
  */
 export async function connectVideoSession({ url, token }: ViewerCredentials): Promise<VideoSession> {
@@ -43,6 +81,8 @@ export async function connectVideoSession({ url, token }: ViewerCredentials): Pr
     watch(participantId, el, onUpdate) {
       let track: RemoteVideoTrack | undefined;
       let prev: { bytes: number; frames: number; at: number } | undefined;
+      let progressAt = 0;
+      let polls = 0;
       let waitingSince = Date.now();
       let last: VideoUpdate = { status: 'connecting' };
 
@@ -84,9 +124,7 @@ export async function connectVideoSession({ url, token }: ViewerCredentials): Pr
           }
           return;
         }
-        const s = (await track.getReceiverStats()) as
-          | { bytesReceived?: number; framesDecoded?: number; frameWidth?: number; frameHeight?: number }
-          | undefined;
+        const s = await inboundVideoStats(track);
         if (!s) return;
         const now = performance.now();
         const bytes = s.bytesReceived ?? 0;
@@ -101,8 +139,16 @@ export async function connectVideoSession({ url, token }: ViewerCredentials): Pr
             bitrateKbps: Math.round(((bytes - prev.bytes) * 8) / 1000 / secs),
           };
         }
+        if (frames !== prev?.frames) progressAt = now;
         prev = { bytes, frames, at: now };
-        if (frames > 0) emit({ status: 'playing', stats: stats ?? last.stats });
+        if (++polls % LOG_EVERY_POLLS === 0) console.info('[sheeshcord] vídeo', participantId, diagnostics(s));
+        if (frames === 0) return;
+        if (now - progressAt > STALL_MS) {
+          if (last.status !== 'stalled') console.warn('[sheeshcord] imagem travada', participantId, diagnostics(s));
+          emit({ status: 'stalled', message: 'A imagem travou. Aguardando um novo quadro…', stats: last.stats });
+        } else {
+          emit({ status: 'playing', stats: stats ?? last.stats });
+        }
       };
 
       room.on(RoomEvent.TrackSubscribed, bind);

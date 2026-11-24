@@ -7,6 +7,8 @@
 
   let chosenId = $state<string | null>(null);
   const current = $derived(sharers.find((p) => p.id === chosenId) ?? sharers[0] ?? null);
+  // Só o id: `sharers` é recriado a cada fala/mute e não pode religar o vídeo.
+  const currentId = $derived(current?.id ?? null);
 
   let frame: HTMLElement | undefined = $state();
   let video: HTMLVideoElement | undefined = $state();
@@ -16,7 +18,8 @@
   let stats = $state<VideoStats | null>(null);
   let fullscreen = $state(false);
 
-  const hasFrame = $derived(status === 'playing');
+  // Travada, a última imagem continua visível com um aviso por cima.
+  const hasFrame = $derived(status === 'playing' || status === 'stalled');
   const resolution = $derived(stats ? `${stats.width}×${stats.height}` : '');
   const detail = $derived(stats ? `${stats.fps} fps · ${(stats.bitrateKbps / 1000).toFixed(1)} Mbps` : '');
 
@@ -42,7 +45,7 @@
 
   // Troca de transmissão: liga o <video> à tela escolhida.
   $effect(() => {
-    const id = current?.id;
+    const id = currentId;
     if (!session || !video || !id) return;
     status = 'connecting';
     message = '';
@@ -130,6 +133,8 @@
           Aguardando a imagem…
         {/if}
       </p>
+    {:else if status === 'stalled'}
+      <p class="espera aviso" role="status">{message}</p>
     {/if}
     <div class="controles">
       {#if resolution && hasFrame}<span class="resolucao">{resolution}{detail ? ` · ${detail}` : ''}</span>{/if}
@@ -222,6 +227,12 @@
     position: absolute;
     margin: 0;
     color: var(--color-nevoa);
+  }
+
+  .aviso {
+    padding: 0.4rem 0.9rem;
+    border-radius: var(--radius-pill);
+    background: rgb(15 26 30 / 0.85);
   }
 
   .controles {

@@ -139,8 +139,11 @@ ARM64 no GHCR + `docker compose up` na VM por SSH) e **release.yml** (tag `v*` �
 - A senha do grupo fica salva em texto puro no `localStorage` do app.
 - O SDK Rust do LiveKit tem menos recursos que o JS (encode por hardware/simulcast
   dependem da versão do libwebrtc embutido).
-- A tela é enviada em H.264 (encoder por hardware quando disponível, fallback VP8) e
-  decodificada pelo WebView; o desempenho real em 1080p60 depende da GPU do host.
+- A tela é enviada em AV1 (libaom), com fallback para H.264 quando o host não codifica AV1
+  (fora do Windows, também quando o encoder fica limitado por CPU); VP8 é o último recurso.
+  No Windows o libwebrtc embutido não tem encoder por hardware: tudo roda em software e o
+  AV1 é o mais rápido (load-test 1080p30: AV1 ~23 fps, VP8 ~11, H.264 ~6 num Ryzen 7 5700X).
+  A tela é decodificada pelo WebView; o desempenho real em 1080p60 depende da CPU do host.
 - Com muitos espectadores, a banda de saída da VM e a latência até São Paulo limitam a qualidade.
 - Captura real de áudio/tela não roda no CI; lá são usadas fontes sintéticas e a UI em modo mock.
 - O teste de carga roda todos os clientes numa só máquina (mede o SFU/link local, não o upload real do host).

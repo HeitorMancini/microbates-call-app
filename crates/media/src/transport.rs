@@ -1,6 +1,8 @@
 //! [`Transport`] backed by the LiveKit Rust SDK (libwebrtc).
 
 use std::collections::HashMap;
+use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -8,10 +10,13 @@ use livekit::options::{
     DegradationPreference, TrackPublishOptions, VideoCodec, VideoEncoderBackend, VideoEncoding,
 };
 use livekit::prelude::*;
+use livekit::rtc_engine::lk_runtime::LkRuntime;
 use livekit::webrtc::audio_source::native::NativeAudioSource;
 use livekit::webrtc::audio_source::{AudioSourceOptions, RtcAudioSource};
 use livekit::webrtc::audio_stream::native::NativeAudioStream;
 use livekit::webrtc::prelude::AudioFrame;
+use livekit::webrtc::stats::{QualityLimitationReason, RtcStats};
+use livekit::webrtc::video_codec::VideoCodec as EncoderCodec;
 use livekit::webrtc::video_source::native::NativeVideoSource;
 use livekit::webrtc::video_source::{RtcVideoSource, VideoResolution};
 use livekit::webrtc::video_stream::native::NativeVideoStream;
@@ -22,7 +27,7 @@ use sheeshcord_core::{
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 
-use crate::hub::{MediaHub, SAMPLE_RATE};
+use crate::hub::{MediaHub, ScreenOutput, SAMPLE_RATE};
 
 /// Identity prefix of the WebView's subscribe-only video client (must match the
 /// token-server's `VIEWER_IDENTITY_PREFIX`); never shown in the roster.
@@ -30,12 +35,14 @@ pub const VIEWER_IDENTITY_PREFIX: &str = "viewer~";
 
 /// Encoder settings for the screen-share track.
 ///
-/// H264 is the default: with `VideoEncoderBackend::Auto` libwebrtc uses a hardware encoder
-/// (NVENC/QSV/AMF) where available and OpenH264 otherwise, and every WebView decodes it in
-/// hardware. VP8 stays available as a software-only fallback.
+/// AV1 is the default (best quality per bit for screen content). H264 is the fallback when
+/// this host cannot encode AV1 or the AV1 encoder stays CPU-limited while sharing. Note that
+/// on Windows webrtc-sys 0.3 ships no hardware encoder (NVENC is Linux-only), so both run in
+/// software (libaom / OpenH264); VP8 is the last resort.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransportOptions {
     pub screen_codec: VideoCodec,
+    pub fallback_codec: VideoCodec,
     /// Decode remote video natively into the hub's RGBA previews. The app leaves this off
     /// because the WebView renders video itself (hardware decode, no JPEG/IPC round trip).
     pub subscribe_video: bool,
@@ -44,10 +51,85 @@ pub struct TransportOptions {
 impl Default for TransportOptions {
     fn default() -> Self {
         Self {
-            screen_codec: VideoCodec::H264,
+            screen_codec: VideoCodec::AV1,
+            fallback_codec: VideoCodec::H264,
             subscribe_video: false,
         }
     }
+}
+
+/// Idle capture time after which the last screen frame is re-sent.
+const SCREEN_REPEAT_IDLE: Duration = Duration::from_millis(250);
+/// How often the screen encoder stats are checked.
+const SCREEN_STATS_EVERY: Duration = Duration::from_secs(5);
+/// Consecutive CPU-limited checks before switching to the fallback codec.
+const CPU_LIMITED_CHECKS: u32 = 3;
+/// The Windows libwebrtc build has no hardware encoders, so a CPU-limited AV1 encoder
+/// would only get slower on OpenH264 (load-test 1080p30: AV1 ~23 fps, VP8 ~11, H.264 ~6).
+const SWITCH_ON_CPU_LIMIT: bool = !cfg!(windows);
+
+/// Codecs to try, in order, for the screen track: `preferred`, then `fallback`, then VP8,
+/// skipping those the host cannot encode (LiveKit would silently swap them for VP8).
+fn screen_codec_order(
+    preferred: VideoCodec,
+    fallback: VideoCodec,
+    producible: &[EncoderCodec],
+) -> Vec<VideoCodec> {
+    let mut order = Vec::new();
+    for codec in [preferred, fallback, VideoCodec::VP8] {
+        let encodable = codec == VideoCodec::VP8 || producible.contains(&codec.into());
+        if encodable && !order.contains(&codec) {
+            order.push(codec);
+        }
+    }
+    order
+}
+
+fn screen_publish_options(preset: ScreenPreset, codec: VideoCodec) -> TrackPublishOptions {
+    TrackPublishOptions {
+        source: TrackSource::Screenshare,
+        video_codec: codec,
+        simulcast: false,
+        video_encoding: Some(VideoEncoding {
+            max_bitrate: preset_max_bitrate(preset),
+            max_framerate: f64::from(preset.fps()),
+        }),
+        video_encoder: VideoEncoderBackend::Auto,
+        // Games: keep the frame rate smooth and let the resolution give way first.
+        degradation_preference: Some(DegradationPreference::MaintainFramerate),
+        ..Default::default()
+    }
+}
+
+/// Publishes `source` with the first codec in `codecs` that LiveKit accepts.
+async fn publish_screen_track(
+    local: &LocalParticipant,
+    source: &NativeVideoSource,
+    preset: ScreenPreset,
+    codecs: &[VideoCodec],
+) -> Result<(LocalTrackPublication, LocalVideoTrack, VideoCodec), BoxError> {
+    let mut last_error: Option<BoxError> = None;
+    for &codec in codecs {
+        let track =
+            LocalVideoTrack::create_video_track("screen", RtcVideoSource::Native(source.clone()));
+        match local
+            .publish_track(
+                LocalTrack::Video(track.clone()),
+                screen_publish_options(preset, codec),
+            )
+            .await
+        {
+            Ok(publication) => {
+                tracing::info!(codec = codec.as_str(), "screen published");
+                return Ok((publication, track, codec));
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, codec = codec.as_str(), "screen publish failed; trying the next codec");
+                last_error = Some(e.into());
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "no screen codec available".into()))
 }
 
 /// Upper bound for the screen-share bitrate of each preset (bits per second).
@@ -61,6 +143,8 @@ pub fn preset_max_bitrate(preset: ScreenPreset) -> u64 {
 
 struct ScreenTrack {
     publication: LocalTrackPublication,
+    /// Frame repeats, encoder stats and the CPU-limited codec fallback.
+    maintenance: JoinHandle<()>,
 }
 
 struct Active {
@@ -71,13 +155,25 @@ struct Active {
     mic_pump: JoinHandle<()>,
 }
 
+impl Active {
+    fn abort_tasks(&self) {
+        self.events.abort();
+        self.mic_pump.abort();
+        if let Some(screen) = &self.screen {
+            screen.maintenance.abort();
+        }
+    }
+}
+
+type SharedActive = Arc<Mutex<Option<Active>>>;
+
 /// LiveKit session: publishes the microphone (fed by [`MediaHub::push_mic`]) and, on
 /// demand, the screen (fed by [`MediaHub::push_screen_bgra`]); remote audio/video is
 /// delivered back into the hub.
 pub struct LiveKitTransport {
     hub: MediaHub,
     options: TransportOptions,
-    active: Mutex<Option<Active>>,
+    active: SharedActive,
 }
 
 impl LiveKitTransport {
@@ -89,7 +185,7 @@ impl LiveKitTransport {
         Self {
             hub,
             options,
-            active: Mutex::new(None),
+            active: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -98,8 +194,7 @@ impl LiveKitTransport {
     }
 
     async fn close(&self, active: Active) {
-        active.events.abort();
-        active.mic_pump.abort();
+        active.abort_tasks();
         self.hub.set_mic_sink(None);
         self.hub.set_screen_sink(None);
         self.hub.set_local_identity(None);
@@ -112,9 +207,11 @@ impl LiveKitTransport {
 
 impl Drop for LiveKitTransport {
     fn drop(&mut self) {
-        if let Some(active) = self.active.get_mut().take() {
-            active.events.abort();
-            active.mic_pump.abort();
+        // Best effort: the screen task only holds a `Weak`, so it also stops on its own.
+        if let Ok(mut guard) = self.active.try_lock() {
+            if let Some(active) = guard.take() {
+                active.abort_tasks();
+            }
         }
     }
 }
@@ -270,6 +367,7 @@ impl Transport for LiveKitTransport {
         let mut guard = self.active.lock().await;
         let active = guard.as_mut().ok_or("not connected")?;
         if let Some(screen) = active.screen.take() {
+            screen.maintenance.abort();
             self.hub.set_screen_sink(None);
             let _ = active
                 .room
@@ -280,40 +378,37 @@ impl Transport for LiveKitTransport {
 
         let (width, height) = (preset.width(), preset.height());
         let source = NativeVideoSource::new(VideoResolution { width, height }, true);
-        let track =
-            LocalVideoTrack::create_video_track("screen", RtcVideoSource::Native(source.clone()));
-        let publish = |codec: VideoCodec| TrackPublishOptions {
-            source: TrackSource::Screenshare,
-            video_codec: codec,
-            simulcast: false,
-            video_encoding: Some(VideoEncoding {
-                max_bitrate: preset_max_bitrate(preset),
-                max_framerate: f64::from(preset.fps()),
-            }),
-            video_encoder: VideoEncoderBackend::Auto,
-            // Games: keep the frame rate smooth and let the resolution give way first.
-            degradation_preference: Some(DegradationPreference::MaintainFramerate),
-            ..Default::default()
-        };
+        let producible = LkRuntime::instance()
+            .pc_factory()
+            .video_encoder_codecs(VideoEncoderBackend::Auto);
+        let codecs = screen_codec_order(
+            self.options.screen_codec,
+            self.options.fallback_codec,
+            &producible,
+        );
         let local = active.room.local_participant();
-        let publication = match local
-            .publish_track(
-                LocalTrack::Video(track.clone()),
-                publish(self.options.screen_codec),
-            )
-            .await
-        {
-            Ok(publication) => publication,
-            Err(e) if self.options.screen_codec != VideoCodec::VP8 => {
-                tracing::warn!(error = %e, "screen publish failed; retrying with VP8");
-                local
-                    .publish_track(LocalTrack::Video(track), publish(VideoCodec::VP8))
-                    .await?
-            }
-            Err(e) => return Err(e.into()),
-        };
-        self.hub.set_screen_sink(Some((source, width, height)));
-        active.screen = Some(ScreenTrack { publication });
+        let (publication, track, codec) =
+            publish_screen_track(&local, &source, preset, &codecs).await?;
+        self.hub
+            .set_screen_sink(Some((ScreenOutput::Source(source.clone()), width, height)));
+        let maintenance = tokio::spawn(maintain_screen(ScreenJob {
+            hub: self.hub.clone(),
+            active: Arc::downgrade(&self.active),
+            source,
+            preset,
+            fallback: if codec == self.options.screen_codec {
+                codecs[1..].to_vec()
+            } else {
+                Vec::new()
+            },
+            track,
+            codec,
+            sid: publication.sid(),
+        }));
+        active.screen = Some(ScreenTrack {
+            publication,
+            maintenance,
+        });
         Ok(())
     }
 
@@ -324,6 +419,7 @@ impl Transport for LiveKitTransport {
             return Ok(());
         };
         if let Some(screen) = active.screen.take() {
+            screen.maintenance.abort();
             active
                 .room
                 .local_participant()
@@ -331,6 +427,136 @@ impl Transport for LiveKitTransport {
                 .await?;
         }
         Ok(())
+    }
+}
+
+struct ScreenJob {
+    hub: MediaHub,
+    active: Weak<Mutex<Option<Active>>>,
+    source: NativeVideoSource,
+    preset: ScreenPreset,
+    /// Codecs to switch to if the current encoder stays CPU-limited (empty: never switch).
+    fallback: Vec<VideoCodec>,
+    track: LocalVideoTrack,
+    codec: VideoCodec,
+    sid: TrackSid,
+}
+
+/// Keeps the published screen healthy: repeats the last frame while capture is idle,
+/// logs which encoder is really in use and, if it stays CPU-limited on a host that may have
+/// hardware encoders, republishes the screen with the fallback codec.
+async fn maintain_screen(mut job: ScreenJob) {
+    let mut tick = tokio::time::interval(SCREEN_REPEAT_IDLE);
+    let mut next_stats = Instant::now() + SCREEN_STATS_EVERY;
+    let mut first_report = true;
+    let mut cpu_limited = 0;
+    loop {
+        tick.tick().await;
+        job.hub.repeat_screen_if_idle(SCREEN_REPEAT_IDLE);
+        if Instant::now() < next_stats {
+            continue;
+        }
+        next_stats = Instant::now() + SCREEN_STATS_EVERY;
+        if job.active.strong_count() == 0 {
+            return;
+        }
+        let limited = report_screen_encoder(&job.track, job.codec, first_report).await;
+        first_report = false;
+        cpu_limited = if limited { cpu_limited + 1 } else { 0 };
+        if SWITCH_ON_CPU_LIMIT && cpu_limited >= CPU_LIMITED_CHECKS && !job.fallback.is_empty() {
+            cpu_limited = 0;
+            if !switch_screen_codec(&mut job).await {
+                return;
+            }
+            first_report = true;
+        }
+    }
+}
+
+/// Logs the screen encoder stats; returns whether the encoder is CPU-limited.
+async fn report_screen_encoder(track: &LocalVideoTrack, codec: VideoCodec, first: bool) -> bool {
+    let stats = match track.get_stats().await {
+        Ok(stats) => stats,
+        Err(e) => {
+            tracing::debug!(error = %e, "screen encoder stats unavailable");
+            return false;
+        }
+    };
+    let mut limited = false;
+    for s in stats {
+        let RtcStats::OutboundRtp(rtp) = s else {
+            continue;
+        };
+        let o = &rtp.outbound;
+        let reason = o.quality_limitation_reason;
+        limited |= reason == QualityLimitationReason::Cpu;
+        macro_rules! report {
+            ($level:ident) => {
+                tracing::$level!(
+                    codec = codec.as_str(),
+                    encoder = %o.encoder_implementation,
+                    hardware = o.power_efficient_encoder,
+                    fps = o.frames_per_second,
+                    width = o.frame_width,
+                    height = o.frame_height,
+                    limitation = ?reason,
+                    key_frames = o.key_frames_encoded,
+                    pli = o.pli_count,
+                    nack = o.nack_count,
+                    "screen encoder"
+                )
+            };
+        }
+        if reason == QualityLimitationReason::Cpu {
+            report!(warn);
+        } else if first {
+            report!(info);
+        } else {
+            report!(debug);
+        }
+    }
+    limited
+}
+
+/// Republishes the screen with the next fallback codec. Returns `false` when the share is
+/// gone (or failed) and the maintenance task should stop.
+async fn switch_screen_codec(job: &mut ScreenJob) -> bool {
+    let Some(shared) = job.active.upgrade() else {
+        return false;
+    };
+    let mut guard = shared.lock().await;
+    let Some(active) = guard.as_mut() else {
+        return false;
+    };
+    let Some(screen) = active.screen.as_mut() else {
+        return false;
+    };
+    if screen.publication.sid() != job.sid {
+        return false;
+    }
+    tracing::warn!(
+        from = job.codec.as_str(),
+        "screen encoder is CPU-limited; switching codec"
+    );
+    let local = active.room.local_participant();
+    if let Err(e) = local.unpublish_track(&job.sid).await {
+        tracing::warn!(error = %e, "failed to unpublish the CPU-limited screen track");
+    }
+    match publish_screen_track(&local, &job.source, job.preset, &job.fallback).await {
+        Ok((publication, track, codec)) => {
+            job.sid = publication.sid();
+            job.track = track;
+            job.codec = codec;
+            job.fallback.clear();
+            screen.publication = publication;
+            true
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "screen republish failed");
+            job.hub.set_screen_sink(None);
+            active.screen = None;
+            false
+        }
     }
 }
 
@@ -465,5 +691,27 @@ async fn read_video(mut stream: NativeVideoStream, participant: String, hub: Med
             let mut i420 = frame.buffer.to_i420();
             hub.emit_preview(&participant, &mut i420);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn screen_codecs_fall_back_to_h264_when_av1_cannot_be_encoded() {
+        let all = [EncoderCodec::AV1, EncoderCodec::H264, EncoderCodec::VP8];
+        assert_eq!(
+            screen_codec_order(VideoCodec::AV1, VideoCodec::H264, &all),
+            [VideoCodec::AV1, VideoCodec::H264, VideoCodec::VP8]
+        );
+        assert_eq!(
+            screen_codec_order(VideoCodec::AV1, VideoCodec::H264, &[EncoderCodec::H264]),
+            [VideoCodec::H264, VideoCodec::VP8]
+        );
+        assert_eq!(
+            screen_codec_order(VideoCodec::VP8, VideoCodec::VP8, &[]),
+            [VideoCodec::VP8]
+        );
     }
 }
