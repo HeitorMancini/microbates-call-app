@@ -234,3 +234,66 @@ async fn screen_share_uses_gpu_encoder_when_available() {
     alice.transport.disconnect().await;
     bob.transport.disconnect().await;
 }
+
+/// When the GPU encoder dies mid-share the screen is republished in software and bob keeps
+/// receiving video.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hardware_failure_falls_back_to_software() {
+    let Some(bin) = find_livekit_server() else {
+        eprintln!("SKIPPED: livekit-server not found (set LIVEKIT_SERVER_BIN or add it to PATH)");
+        return;
+    };
+    let log = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("media-hwfail-server.log");
+    let server = LiveKitServer::start(&bin, &log)
+        .await
+        .expect("start livekit-server");
+    let token_server = TokenServer::start(&server.ws_url(), API_SECRET)
+        .await
+        .expect("start token-server");
+    let tokens = HttpTokenProvider::default();
+    let alice = join(&tokens, &token_server.url(), "alice", true).await;
+    let bob = join(&tokens, &token_server.url(), "bob", true).await;
+
+    alice
+        .screen
+        .start(FAKE_MONITOR_ID, ScreenPreset::P720Fps30)
+        .await
+        .unwrap();
+    alice
+        .transport
+        .publish_screen(ScreenPreset::P720Fps30)
+        .await
+        .unwrap();
+    let info = alice
+        .transport
+        .screen_encoder()
+        .await
+        .expect("encoder info");
+    if !info.hardware {
+        eprintln!("SKIPPED: no GPU encoder on this machine ({info:?})");
+    } else {
+        let bob_hub = bob.hub.clone();
+        wait_for("remote video", Duration::from_secs(20), || {
+            bob_hub.stats().remote_video_frames > 30
+        })
+        .await;
+        alice.transport.fail_hardware_encoder_for_test().await;
+        let before = bob_hub.stats().remote_video_frames;
+        wait_for("video after fallback", Duration::from_secs(15), || {
+            bob_hub.stats().remote_video_frames > before + 30
+        })
+        .await;
+        let info = alice
+            .transport
+            .screen_encoder()
+            .await
+            .expect("encoder info");
+        eprintln!("after fallback: {info:?}");
+        assert!(!info.hardware, "still on the GPU: {info:?}");
+    }
+
+    alice.transport.unpublish_screen().await.unwrap();
+    alice.screen.stop().await;
+    alice.transport.disconnect().await;
+    bob.transport.disconnect().await;
+}

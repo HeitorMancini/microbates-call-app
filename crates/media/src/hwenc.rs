@@ -783,7 +783,6 @@ mod imp {
     /// this handle and every [`ScreenFeed`] from it are dropped.
     pub(crate) struct HwScreenEncoder {
         frames: SyncSender<Nv12Frame>,
-        #[allow(dead_code)] // Read by the transport's hardware failure check.
         failed: Arc<AtomicBool>,
     }
 
@@ -816,9 +815,13 @@ mod imp {
         }
 
         /// Whether the encoder stopped with an error (the share should fall back to software).
-        #[allow(dead_code)] // Read by the transport's hardware failure check.
         pub(crate) fn failed(&self) -> bool {
             self.failed.load(Ordering::Relaxed)
+        }
+
+        /// Flags the encoder as failed (test hook for the software fallback).
+        pub(crate) fn mark_failed(&self) {
+            self.failed.store(true, Ordering::Relaxed);
         }
     }
 
@@ -973,6 +976,8 @@ mod imp {
         pub(crate) fn failed(&self) -> bool {
             true
         }
+
+        pub(crate) fn mark_failed(&self) {}
     }
 }
 

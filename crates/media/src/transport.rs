@@ -184,7 +184,6 @@ struct ScreenTrack {
     maintenance: JoinHandle<()>,
     info: ScreenEncoderInfo,
     /// The GPU encoder thread, while the screen is hardware encoded.
-    #[allow(dead_code)] // Read by the hardware failure check.
     hw: Option<Arc<HwScreenEncoder>>,
 }
 
@@ -240,6 +239,19 @@ impl LiveKitTransport {
         Some(guard.as_ref()?.screen.as_ref()?.info.clone())
     }
 
+    /// Test hook: makes the active GPU screen encoder report a failure.
+    #[doc(hidden)]
+    pub async fn fail_hardware_encoder_for_test(&self) {
+        let guard = self.active.lock().await;
+        if let Some(hw) = guard
+            .as_ref()
+            .and_then(|a| a.screen.as_ref())
+            .and_then(|s| s.hw.as_ref())
+        {
+            hw.mark_failed();
+        }
+    }
+
     /// Probes the GPU and publishes a pre-encoded screen track fed by it. `None` when no
     /// hardware encoder works or LiveKit rejects the track (the caller uses software).
     async fn publish_screen_hardware(
@@ -278,8 +290,7 @@ impl LiveKitTransport {
         Some(HwPublish {
             publication,
             track,
-            encoder: Arc::new(HwScreenEncoder::start(codec, cfg, source.clone())),
-            source,
+            encoder: Arc::new(HwScreenEncoder::start(codec, cfg, source)),
             info: ScreenEncoderInfo {
                 codec,
                 encoder,
@@ -477,7 +488,6 @@ impl Transport for LiveKitTransport {
             publication,
             track,
             encoder: hw,
-            source,
             info,
         }) = self.publish_screen_hardware(&local, preset).await
         {
@@ -486,14 +496,16 @@ impl Transport for LiveKitTransport {
             let maintenance = tokio::spawn(maintain_screen(ScreenJob {
                 hub: self.hub.clone(),
                 active: Arc::downgrade(&self.active),
-                source,
+                options: self.options,
                 preset,
                 // The GPU is never CPU-limited; hardware failures are handled separately.
                 fallback: Vec::new(),
                 track,
                 info: info.clone(),
+                hw: Some(hw.clone()),
                 sid: publication.sid(),
             }));
+            // The pre-encoded source lives in the encoder thread.
             active.screen = Some(ScreenTrack {
                 publication,
                 maintenance,
@@ -505,32 +517,22 @@ impl Transport for LiveKitTransport {
 
         tracing::info!("screen encoding in software");
         let source = NativeVideoSource::new(VideoResolution { width, height }, true);
-        let producible = LkRuntime::instance()
-            .pc_factory()
-            .video_encoder_codecs(VideoEncoderBackend::Auto);
-        let codecs = screen_codec_order(
-            self.options.screen_codec,
-            self.options.fallback_codec,
-            &producible,
-        );
+        let codecs = software_screen_codecs(&self.options);
         let (publication, track, codec) =
             publish_screen_track(&local, &source, preset, &codecs, VideoEncoderBackend::Auto)
                 .await?;
         self.hub
-            .set_screen_sink(Some((ScreenOutput::Source(source.clone()), width, height)));
+            .set_screen_sink(Some((ScreenOutput::Source(source), width, height)));
         let info = ScreenEncoderInfo::software(codec);
         let maintenance = tokio::spawn(maintain_screen(ScreenJob {
             hub: self.hub.clone(),
             active: Arc::downgrade(&self.active),
-            source,
+            options: self.options,
             preset,
-            fallback: if codec == self.options.screen_codec {
-                codecs[1..].to_vec()
-            } else {
-                Vec::new()
-            },
+            fallback: software_fallback(&self.options, codec, &codecs),
             track,
             info: info.clone(),
+            hw: None,
             sid: publication.sid(),
         }));
         active.screen = Some(ScreenTrack {
@@ -563,12 +565,14 @@ impl Transport for LiveKitTransport {
 struct ScreenJob {
     hub: MediaHub,
     active: Weak<Mutex<Option<Active>>>,
-    source: NativeVideoSource,
+    options: TransportOptions,
     preset: ScreenPreset,
     /// Codecs to switch to if the current encoder stays CPU-limited (empty: never switch).
     fallback: Vec<VideoCodec>,
     track: LocalVideoTrack,
     info: ScreenEncoderInfo,
+    /// The GPU encoder, while the screen is hardware encoded.
+    hw: Option<Arc<HwScreenEncoder>>,
     sid: TrackSid,
 }
 
@@ -577,14 +581,62 @@ struct HwPublish {
     publication: LocalTrackPublication,
     track: LocalVideoTrack,
     encoder: Arc<HwScreenEncoder>,
-    /// The pre-encoded source the encoder thread writes to.
-    source: NativeVideoSource,
     info: ScreenEncoderInfo,
 }
 
+/// Software screen codecs this host can encode, in preference order.
+fn software_screen_codecs(options: &TransportOptions) -> Vec<VideoCodec> {
+    let producible = LkRuntime::instance()
+        .pc_factory()
+        .video_encoder_codecs(VideoEncoderBackend::Auto);
+    screen_codec_order(options.screen_codec, options.fallback_codec, &producible)
+}
+
+/// Codecs left to try if `codec` (published from `codecs`) stays CPU-limited.
+fn software_fallback(
+    options: &TransportOptions,
+    codec: VideoCodec,
+    codecs: &[VideoCodec],
+) -> Vec<VideoCodec> {
+    if codec == options.screen_codec {
+        codecs[1..].to_vec()
+    } else {
+        Vec::new()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MaintainAction {
+    Continue,
+    /// The GPU encoder died: republish the screen in software.
+    FallBackToSoftware,
+    /// The software encoder stays CPU-limited: republish with the fallback codec.
+    SwitchCodec,
+}
+
+fn next_action(
+    hw_failed: bool,
+    cpu_limited_checks: u32,
+    has_fallback: bool,
+    hardware: bool,
+) -> MaintainAction {
+    if hw_failed {
+        MaintainAction::FallBackToSoftware
+    } else if SWITCH_ON_CPU_LIMIT
+        && !hardware
+        && has_fallback
+        && cpu_limited_checks >= CPU_LIMITED_CHECKS
+    {
+        MaintainAction::SwitchCodec
+    } else {
+        MaintainAction::Continue
+    }
+}
+
 /// Keeps the published screen healthy: repeats the last frame while capture is idle,
-/// logs which encoder is really in use and, if it stays CPU-limited on a host that may have
-/// hardware encoders, republishes the screen with the fallback codec.
+/// logs which encoder is really in use, republishes in software if the GPU encoder fails
+/// and, if a software encoder stays CPU-limited on a host that may have hardware encoders,
+/// republishes the screen with the fallback codec.
 async fn maintain_screen(mut job: ScreenJob) {
     let mut tick = tokio::time::interval(SCREEN_REPEAT_IDLE);
     let mut next_stats = Instant::now() + SCREEN_STATS_EVERY;
@@ -593,23 +645,45 @@ async fn maintain_screen(mut job: ScreenJob) {
     loop {
         tick.tick().await;
         job.hub.repeat_screen_if_idle(SCREEN_REPEAT_IDLE);
-        if Instant::now() < next_stats {
-            continue;
-        }
-        next_stats = Instant::now() + SCREEN_STATS_EVERY;
         if job.active.strong_count() == 0 {
             return;
         }
-        let limited = report_screen_encoder(&job.track, &job.info, first_report).await;
-        first_report = false;
-        cpu_limited = if limited { cpu_limited + 1 } else { 0 };
-        if SWITCH_ON_CPU_LIMIT && cpu_limited >= CPU_LIMITED_CHECKS && !job.fallback.is_empty() {
-            cpu_limited = 0;
-            if !switch_screen_codec(&mut job).await {
-                return;
-            }
-            first_report = true;
+        if Instant::now() >= next_stats {
+            next_stats = Instant::now() + SCREEN_STATS_EVERY;
+            let limited = report_screen_encoder(&job.track, &job.info, first_report).await;
+            first_report = false;
+            cpu_limited = if limited { cpu_limited + 1 } else { 0 };
         }
+        let hw_failed = job.hw.as_ref().is_some_and(|hw| hw.failed());
+        let codecs = match next_action(
+            hw_failed,
+            cpu_limited,
+            !job.fallback.is_empty(),
+            job.info.hardware,
+        ) {
+            MaintainAction::Continue => continue,
+            MaintainAction::FallBackToSoftware => {
+                tracing::warn!(
+                    codec = job.info.codec.as_str(),
+                    encoder = %job.info.encoder,
+                    "GPU screen encoder failed; switching to software"
+                );
+                software_screen_codecs(&job.options)
+            }
+            MaintainAction::SwitchCodec => {
+                tracing::warn!(
+                    from = job.info.codec.as_str(),
+                    "screen encoder is CPU-limited; switching codec"
+                );
+                std::mem::take(&mut job.fallback)
+            }
+        };
+        cpu_limited = 0;
+        if !republish_screen_software(&mut job, &codecs).await {
+            return;
+        }
+        first_report = true;
+        next_stats = Instant::now() + SCREEN_STATS_EVERY;
     }
 }
 
@@ -663,9 +737,10 @@ async fn report_screen_encoder(
     limited
 }
 
-/// Republishes the screen with the next fallback codec. Returns `false` when the share is
-/// gone (or failed) and the maintenance task should stop.
-async fn switch_screen_codec(job: &mut ScreenJob) -> bool {
+/// Republishes the screen with libwebrtc's software encoder, using the first of `codecs`
+/// LiveKit accepts. Returns `false` when the share is gone (or failed) and the maintenance
+/// task should stop.
+async fn republish_screen_software(job: &mut ScreenJob, codecs: &[VideoCodec]) -> bool {
     let Some(shared) = job.active.upgrade() else {
         return false;
     };
@@ -679,30 +754,34 @@ async fn switch_screen_codec(job: &mut ScreenJob) -> bool {
     if screen.publication.sid() != job.sid {
         return false;
     }
-    tracing::warn!(
-        from = job.info.codec.as_str(),
-        "screen encoder is CPU-limited; switching codec"
-    );
     let local = active.room.local_participant();
     if let Err(e) = local.unpublish_track(&job.sid).await {
-        tracing::warn!(error = %e, "failed to unpublish the CPU-limited screen track");
+        tracing::warn!(error = %e, "failed to unpublish the screen track");
     }
+    let (width, height) = (job.preset.width(), job.preset.height());
+    let source = NativeVideoSource::new(VideoResolution { width, height }, true);
     match publish_screen_track(
         &local,
-        &job.source,
+        &source,
         job.preset,
-        &job.fallback,
+        codecs,
         VideoEncoderBackend::Auto,
     )
     .await
     {
         Ok((publication, track, codec)) => {
+            // Replacing the sink drops the GPU feed; with `hw` gone its thread stops.
+            job.hub
+                .set_screen_sink(Some((ScreenOutput::Source(source), width, height)));
+            tracing::info!(codec = codec.as_str(), "screen encoding in software");
             job.sid = publication.sid();
             job.track = track;
             job.info = ScreenEncoderInfo::software(codec);
-            job.fallback.clear();
+            job.hw = None;
+            job.fallback = software_fallback(&job.options, codec, codecs);
             screen.publication = publication;
             screen.info = job.info.clone();
+            screen.hw = None;
             true
         }
         Err(e) => {
@@ -851,6 +930,27 @@ async fn read_video(mut stream: NativeVideoStream, participant: String, hub: Med
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn maintenance_decisions() {
+        use MaintainAction::*;
+        assert_eq!(next_action(true, 0, false, true), FallBackToSoftware);
+        // The GPU never switches codec for being CPU-limited.
+        assert_eq!(next_action(false, CPU_LIMITED_CHECKS, true, true), Continue);
+        assert_eq!(
+            next_action(false, CPU_LIMITED_CHECKS, true, false),
+            if SWITCH_ON_CPU_LIMIT {
+                SwitchCodec
+            } else {
+                Continue
+            }
+        );
+        assert_eq!(
+            next_action(false, CPU_LIMITED_CHECKS, false, false),
+            Continue
+        );
+        assert_eq!(next_action(false, 0, true, false), Continue);
+    }
 
     #[test]
     fn hardware_candidates_keep_preference_order() {
