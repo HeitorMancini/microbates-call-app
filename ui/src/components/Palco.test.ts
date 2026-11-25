@@ -1,0 +1,139 @@
+import { render, screen, within } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import { createMockBackend } from '../lib/mock';
+import type { Participant } from '../lib/types';
+import Palco from './Palco.svelte';
+
+// jsdom não tem ResizeObserver: reporta a janela de referência 1100×720.
+class ResizeObserverFalso {
+  #cb: ResizeObserverCallback;
+  constructor(cb: ResizeObserverCallback) {
+    this.#cb = cb;
+  }
+  observe() {
+    this.#cb([{ contentRect: { width: 1100, height: 720 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+  }
+  unobserve() {}
+  disconnect() {}
+}
+vi.stubGlobal('ResizeObserver', ResizeObserverFalso);
+
+const backend = createMockBackend({ latencyMs: 0, autoSpeak: false, frames: false });
+
+const p = (over: Partial<Participant>): Participant => ({
+  id: over.name ?? 'x',
+  name: 'x',
+  muted: false,
+  speaking: false,
+  sharingScreen: false,
+  isLocal: false,
+  ...over,
+});
+
+describe('Palco', () => {
+  it('lista as pessoas com rótulo e contagem', () => {
+    render(Palco, { participants: [p({ name: 'Ana' }), p({ name: 'Bia' }), p({ name: 'Caio' })], backend });
+    const list = screen.getByRole('list', { name: 'Pessoas na sala (3)' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+  });
+
+  it('sem ninguém mostra o aviso', () => {
+    render(Palco, { participants: [], backend });
+    expect(screen.getByText('Ninguém por aqui ainda. Chame a turma para a sala.')).toBeInTheDocument();
+    expect(screen.queryByRole('list')).toBeNull();
+  });
+
+  it('posiciona cada blob pela roda', () => {
+    render(Palco, { participants: [p({ name: 'Ana' }), p({ name: 'Bia' })], backend });
+    const list = screen.getByRole('list', { name: 'Pessoas na sala (2)' });
+    const [first] = within(list).getAllByRole('listitem');
+    // Centro − metade do item (430 − 60): roda sem tela, 2 pessoas, janela 1100×720.
+    expect(first).toHaveAttribute('style', expect.stringContaining('370px'));
+  });
+
+  it('alguém compartilha → modo palco; Roda → tela pequena; clicar na tela → palco', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(Palco, {
+      participants: [p({ name: 'Ana', isLocal: true }), p({ name: 'Bia' }), p({ name: 'Caio' })],
+      backend,
+    });
+
+    await rerender({
+      participants: [p({ name: 'Ana', isLocal: true }), p({ name: 'Bia', sharingScreen: true }), p({ name: 'Caio' })],
+      backend,
+    });
+
+    const tela = screen.getByTestId('palco-tela');
+    expect(tela).not.toHaveClass('pequena');
+    const blobs = screen.getAllByTestId('participante');
+    expect(blobs.every((b) => b.getAttribute('data-pequeno') === 'true')).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: 'Roda' }));
+    expect(tela).toHaveClass('pequena');
+    expect(screen.getAllByTestId('participante').every((b) => b.getAttribute('data-pequeno') === 'false')).toBe(true);
+
+    await user.click(tela);
+    expect(tela).not.toHaveClass('pequena');
+  });
+
+  it('clicar no AO VIVO troca a tela assistida', async () => {
+    const user = userEvent.setup();
+    render(Palco, {
+      participants: [
+        p({ name: 'Ana', isLocal: true }),
+        p({ name: 'Bia', sharingScreen: true }),
+        p({ name: 'Caio', sharingScreen: true }),
+      ],
+      backend,
+    });
+
+    expect(screen.getByRole('heading', { name: 'Tela de Bia' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Assistir a tela de Caio' }));
+    expect(screen.getByRole('heading', { name: 'Tela de Caio' })).toBeInTheDocument();
+  });
+
+  it('quem você assiste para → cai para quem ainda compartilha; último para → roda sem tela; novo compartilhamento abre no palco', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(Palco, {
+      participants: [
+        p({ name: 'Ana', isLocal: true }),
+        p({ name: 'Bia', sharingScreen: true }),
+        p({ name: 'Caio', sharingScreen: true }),
+        p({ name: 'Gui' }),
+      ],
+      backend,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Assistir a tela de Caio' }));
+    expect(screen.getByRole('heading', { name: 'Tela de Caio' })).toBeInTheDocument();
+
+    await rerender({
+      participants: [
+        p({ name: 'Ana', isLocal: true }),
+        p({ name: 'Bia', sharingScreen: true }),
+        p({ name: 'Caio' }),
+        p({ name: 'Gui' }),
+      ],
+      backend,
+    });
+    expect(screen.getByRole('heading', { name: 'Tela de Bia' })).toBeInTheDocument();
+
+    await rerender({
+      participants: [p({ name: 'Ana', isLocal: true }), p({ name: 'Bia' }), p({ name: 'Caio' }), p({ name: 'Gui' })],
+      backend,
+    });
+    expect(screen.queryByTestId('palco-tela')).toBeNull();
+
+    await rerender({
+      participants: [
+        p({ name: 'Ana', isLocal: true }),
+        p({ name: 'Bia' }),
+        p({ name: 'Caio' }),
+        p({ name: 'Gui', sharingScreen: true }),
+      ],
+      backend,
+    });
+    expect(screen.getByTestId('palco-tela')).not.toHaveClass('pequena');
+  });
+});

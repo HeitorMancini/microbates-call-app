@@ -3,12 +3,11 @@
   import type { Backend, Participant, VideoSession, VideoStats, VideoStatus } from '../lib/types';
   import Icon from './Icon.svelte';
 
-  let { backend, sharers }: { backend: Backend; sharers: Participant[] } = $props();
+  let { backend, sharer, pequena, onroda }: { backend: Backend; sharer: Participant; pequena: boolean; onroda: () => void } =
+    $props();
 
-  let chosenId = $state<string | null>(null);
-  const current = $derived(sharers.find((p) => p.id === chosenId) ?? sharers[0] ?? null);
-  // Só o id: `sharers` é recriado a cada fala/mute e não pode religar o vídeo.
-  const currentId = $derived(current?.id ?? null);
+  // Só o id: `sharer` é recriado a cada fala/mute e não pode religar o vídeo.
+  const sharerId = $derived(sharer.id);
 
   let frame: HTMLElement | undefined = $state();
   let video: HTMLVideoElement | undefined = $state();
@@ -45,8 +44,8 @@
 
   // Troca de transmissão: liga o <video> à tela escolhida.
   $effect(() => {
-    const id = currentId;
-    if (!session || !video || !id) return;
+    const id = sharerId;
+    if (!session || !video) return;
     status = 'connecting';
     message = '';
     stats = null;
@@ -82,31 +81,13 @@
 <svelte:document onfullscreenchange={() => (fullscreen = !!document.fullscreenElement && document.fullscreenElement === frame)} />
 
 <section class="visor" aria-labelledby="visor-titulo">
-  <header class="barra">
-    <h2 id="visor-titulo">
-      {#if current}
-        {current.isLocal ? 'Sua tela' : `Tela de ${current.name}`}
-      {/if}
-    </h2>
-
-    {#if sharers.length > 1}
-      <div class="escolha" role="group" aria-label="Escolher transmissão">
-        {#each sharers as s (s.id)}
-          <button
-            type="button"
-            class="chip"
-            aria-pressed={s.id === current?.id}
-            onclick={() => (chosenId = s.id)}>{s.isLocal ? 'Você' : s.name}</button
-          >
-        {/each}
-      </div>
-    {/if}
-  </header>
+  <h2 id="visor-titulo" class="sr-only">{sharer.isLocal ? 'Sua tela' : `Tela de ${sharer.name}`}</h2>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
   <div
     class="moldura"
     class:cheia={fullscreen}
+    class:pequena
     bind:this={frame}
     tabindex="0"
     role="region"
@@ -136,62 +117,33 @@
     {:else if status === 'stalled'}
       <p class="espera aviso" role="status">{message}</p>
     {/if}
-    <div class="controles">
-      {#if resolution && hasFrame}<span class="resolucao">{resolution}{detail ? ` · ${detail}` : ''}</span>{/if}
-      <button
-        type="button"
-        class="botao icone"
-        onclick={toggleFullscreen}
-        aria-label={fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
-        title={fullscreen ? 'Sair da tela cheia (F)' : 'Tela cheia (F)'}
-      >
-        <Icon name={fullscreen ? 'shrink' : 'expand'} size={20} />
+
+    {#if !pequena}
+      <button type="button" class="botao roda" onclick={() => onroda()}>
+        <Icon name="roda" size={16} />
+        Roda
       </button>
-    </div>
+      <div class="controles">
+        {#if resolution && hasFrame}<span class="resolucao">{resolution}{detail ? ` · ${detail}` : ''}</span>{/if}
+        <button
+          type="button"
+          class="botao icone"
+          onclick={toggleFullscreen}
+          aria-label={fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+          title={fullscreen ? 'Sair da tela cheia (F)' : 'Tela cheia (F)'}
+        >
+          <Icon name={fullscreen ? 'shrink' : 'expand'} size={20} />
+        </button>
+      </div>
+    {/if}
   </div>
 </section>
 
 <style>
   .visor {
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 0.75rem;
     min-height: 0;
     height: 100%;
-  }
-
-  .barra {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-
-  h2 {
-    margin: 0;
-    font-size: 1.15rem;
-    font-weight: 700;
-  }
-
-  .escolha {
-    display: flex;
-    gap: 0.4rem;
-  }
-
-  .chip {
-    min-height: 36px;
-    padding: 0 0.9rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-trilho);
-    background: transparent;
-    font-weight: 600;
-  }
-
-  .chip[aria-pressed='true'] {
-    background: var(--color-giz);
-    border-color: var(--color-giz);
-    color: var(--color-breu);
   }
 
   .moldura {
@@ -199,6 +151,7 @@
     display: grid;
     place-items: center;
     min-height: 0;
+    height: 100%;
     border-radius: var(--radius-painel);
     background: #071013;
     overflow: hidden;
@@ -229,9 +182,20 @@
     color: var(--color-nevoa);
   }
 
+  .moldura.pequena .espera {
+    font-size: 0.8rem;
+  }
+
   .aviso {
     padding: 0.4rem 0.9rem;
     border-radius: var(--radius-pill);
+    background: rgb(15 26 30 / 0.85);
+  }
+
+  .roda {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
     background: rgb(15 26 30 / 0.85);
   }
 

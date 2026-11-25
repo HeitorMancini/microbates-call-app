@@ -3,8 +3,7 @@
   import { arrastavel } from '../lib/janela';
   import type { ConnectionStatus } from '../lib/types';
   import ControlBar from './ControlBar.svelte';
-  import ParticipantList from './ParticipantList.svelte';
-  import ScreenViewer from './ScreenViewer.svelte';
+  import Palco from './Palco.svelte';
 
   let { store }: { store: RoomStore } = $props();
 
@@ -51,19 +50,9 @@
     </div>
   </header>
 
-  <main class="palco" class:com-tela={store.sharers.length > 0} aria-label="Sala {store.roomName}">
-    {#if store.sharers.length > 0}
-      <div class="area-tela">
-        <ScreenViewer backend={store.backend} sharers={store.sharers} />
-      </div>
-      <aside class="trilho" aria-label="Pessoas">
-        <ParticipantList participants={store.participants} compact />
-      </aside>
-    {:else}
-      <div class="grade">
-        <ParticipantList participants={store.participants} />
-      </div>
-    {/if}
+  <main class="area-palco" aria-label="Sala {store.roomName}">
+    <!-- Reescrito na Tarefa 5 (moldura da call); por ora só hospeda o Palco. -->
+    <Palco participants={store.participants} backend={store.backend} />
   </main>
 
   {#if store.error}
@@ -161,29 +150,8 @@
     color: var(--color-nevoa);
   }
 
-  .palco {
-    min-height: 0;
-    display: grid;
-  }
-
-  .grade {
-    overflow-y: auto;
-    align-self: center;
-    padding: 1.5rem 0.5rem;
-  }
-
-  .palco.com-tela {
-    grid-template-columns: minmax(0, 1fr) 240px;
-    gap: 1.25rem;
-  }
-
-  .area-tela {
-    min-height: 0;
-  }
-
-  .trilho {
-    overflow-y: auto;
-    padding: 0.5rem 0.25rem;
+  .area-palco {
+    position: relative;
     min-height: 0;
   }
 
@@ -198,14 +166,4 @@
     border: 1px solid var(--color-corte);
   }
 
-  @media (max-width: 760px) {
-    .palco.com-tela {
-      grid-template-columns: 1fr;
-      grid-template-rows: minmax(220px, 1fr) auto;
-    }
-
-    .trilho {
-      max-height: 160px;
-    }
-  }
 </style>

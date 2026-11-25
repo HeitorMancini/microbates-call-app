@@ -11,7 +11,8 @@
     | 'expand'
     | 'shrink'
     | 'close'
-    | 'alert';
+    | 'alert'
+    | 'roda';
 </script>
 
 <script lang="ts">
@@ -60,5 +61,10 @@
   {:else if name === 'alert'}
     <circle cx="12" cy="12" r="9" />
     <path d="M12 7v6M12 16.5v.5" />
+  {:else if name === 'roda'}
+    <circle cx="12" cy="5" r="2.2" />
+    <circle cx="19" cy="12" r="2.2" />
+    <circle cx="12" cy="19" r="2.2" />
+    <circle cx="5" cy="12" r="2.2" />
   {/if}
 </svg>
