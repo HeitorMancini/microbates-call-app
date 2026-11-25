@@ -21,7 +21,7 @@ export function montarBrilho(alvo: HTMLElement, opcoes?: { nivel?: () => number 
           look: 'dither',
           theme: 'dark',
           active: ativo,
-          level: nivel(),
+          level: nivel,
           idle: 0,
           pixelMagnet: 0,
           scale: 1.2,
