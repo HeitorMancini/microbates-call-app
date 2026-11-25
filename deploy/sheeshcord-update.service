@@ -1,0 +1,6 @@
+[Unit]
+Description=Atualiza o token-server do Sheeshcord (GHCR)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/sheeshcord-update.sh
