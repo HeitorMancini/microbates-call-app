@@ -25,6 +25,7 @@ mod imp {
     use windows_capture::window::Window;
 
     use crate::hub::{lock, MediaHub};
+    use crate::screen_audio::{pid_for_hwnd, AudioTarget, ScreenAudioCapture};
 
     struct Handler {
         hub: MediaHub,
@@ -101,10 +102,25 @@ mod imp {
         )
     }
 
+    /// Whose audio goes with `source_id`: a window's own app, or the whole system without
+    /// this app (`own_pid`) for a monitor. `None` when the owner cannot be determined.
+    fn audio_target(
+        source_id: &str,
+        own_pid: u32,
+        window_pid: impl Fn(isize) -> Option<u32>,
+    ) -> Option<AudioTarget> {
+        if source_id.starts_with("monitor:") {
+            return Some(AudioTarget::ExcludeProcess(own_pid));
+        }
+        let hwnd = source_id.strip_prefix("window:")?.parse::<usize>().ok()?;
+        window_pid(hwnd as isize).map(AudioTarget::IncludeProcess)
+    }
+
     /// [`ScreenSource`] backed by Windows.Graphics.Capture (Windows 10 1903+).
     pub struct WgcScreen {
         hub: MediaHub,
         control: Mutex<Option<CaptureControl<Handler, BoxError>>>,
+        audio: Mutex<Option<ScreenAudioCapture>>,
     }
 
     impl WgcScreen {
@@ -112,10 +128,12 @@ mod imp {
             Self {
                 hub,
                 control: Mutex::new(None),
+                audio: Mutex::new(None),
             }
         }
 
         fn stop_capture(&self) {
+            lock(&self.audio).take();
             let control = lock(&self.control).take();
             if let Some(control) = control {
                 if let Err(e) = control.stop() {
@@ -171,7 +189,7 @@ mod imp {
             &self,
             source_id: &str,
             preset: ScreenPreset,
-            _with_audio: bool,
+            with_audio: bool,
         ) -> Result<(), BoxError> {
             self.stop_capture();
             let flags = (self.hub.clone(), preset.fps());
@@ -181,6 +199,17 @@ mod imp {
             }
             .map_err(|e| format!("falha ao iniciar captura de tela: {e}"))?;
             *lock(&self.control) = Some(control);
+            if with_audio {
+                match audio_target(source_id, std::process::id(), pid_for_hwnd) {
+                    Some(target) => match ScreenAudioCapture::start(target, self.hub.clone()) {
+                        Ok(capture) => *lock(&self.audio) = Some(capture),
+                        Err(e) => {
+                            tracing::warn!(error = %e, "screen audio unavailable; sharing without audio");
+                        }
+                    },
+                    None => tracing::warn!(source_id, "no audio target for this source"),
+                }
+            }
             Ok(())
         }
 
@@ -192,6 +221,29 @@ mod imp {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn audio_target_monitor_excludes_own_pid() {
+            assert_eq!(
+                audio_target("monitor:2", 77, |_| None),
+                Some(AudioTarget::ExcludeProcess(77))
+            );
+        }
+
+        #[test]
+        fn audio_target_window_includes_owner() {
+            assert_eq!(
+                audio_target("window:1234", 77, |hwnd| (hwnd == 1234).then_some(500)),
+                Some(AudioTarget::IncludeProcess(500))
+            );
+        }
+
+        #[test]
+        fn audio_target_unknown_window_or_id_is_none() {
+            assert_eq!(audio_target("window:1234", 77, |_| None), None);
+            assert_eq!(audio_target("window:abc", 77, |_| Some(1)), None);
+            assert_eq!(audio_target("tv:1", 77, |_| Some(1)), None);
+        }
 
         #[test]
         fn rejects_unknown_ids() {
