@@ -29,8 +29,11 @@ pub enum TransportEvent {
         id: String,
         sharing: bool,
     },
-    /// Full list of participants currently speaking (may include the local identity).
-    ActiveSpeakers(Vec<String>),
+    /// A participant (possibly the local identity) started or stopped speaking.
+    SpeakingChanged {
+        id: String,
+        speaking: bool,
+    },
     /// Unexpected loss of connection; the room will try to reconnect.
     Disconnected {
         reason: String,
@@ -51,8 +54,7 @@ pub trait Transport: Send + Sync {
     async fn disconnect(&self);
     async fn set_microphone_muted(&self, muted: bool) -> Result<(), BoxError>;
     /// Publishes the screen video track, plus its audio track when `with_audio`.
-    async fn publish_screen(&self, preset: ScreenPreset, with_audio: bool)
-        -> Result<(), BoxError>;
+    async fn publish_screen(&self, preset: ScreenPreset, with_audio: bool) -> Result<(), BoxError>;
     async fn unpublish_screen(&self) -> Result<(), BoxError>;
 }
 

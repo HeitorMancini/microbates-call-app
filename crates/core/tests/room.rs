@@ -195,12 +195,20 @@ async fn participants_join_update_and_leave() {
         })
         .await;
     h.transport
-        .emit(TransportEvent::ActiveSpeakers(vec![
-            "bob".into(),
-            "local-1".into(),
-        ]))
+        .emit(TransportEvent::SpeakingChanged {
+            id: "bob".into(),
+            speaking: true,
+        })
         .await;
-    let list = h.wait_participants(|p| p.iter().any(|x| x.speaking)).await;
+    h.transport
+        .emit(TransportEvent::SpeakingChanged {
+            id: "local-1".into(),
+            speaking: true,
+        })
+        .await;
+    let list = h
+        .wait_participants(|p| p.iter().filter(|x| x.speaking).count() == 2)
+        .await;
     assert!(list.iter().find(|p| p.id == "carol").unwrap().muted);
     let speaking: Vec<_> = list
         .iter()

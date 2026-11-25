@@ -249,7 +249,12 @@ impl RoomService {
         if !sources.iter().any(|s| s.id == source_id) {
             return Err(RoomError::UnknownScreenSource(source_id.to_owned()));
         }
-        tracing::info!(source_id, ?preset, with_audio, "iniciando compartilhamento de tela");
+        tracing::info!(
+            source_id,
+            ?preset,
+            with_audio,
+            "iniciando compartilhamento de tela"
+        );
         Ok(self
             .controller
             .start_screen_share(source_id, preset, with_audio)

@@ -168,11 +168,7 @@ impl Transport for MockTransport {
         Ok(())
     }
 
-    async fn publish_screen(
-        &self,
-        preset: ScreenPreset,
-        with_audio: bool,
-    ) -> Result<(), BoxError> {
+    async fn publish_screen(&self, preset: ScreenPreset, with_audio: bool) -> Result<(), BoxError> {
         let mut state = lock(&self.state);
         state.screen = Some(preset);
         state.screen_audio = with_audio;

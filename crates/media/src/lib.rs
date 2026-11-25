@@ -17,6 +17,7 @@ mod hwenc;
 mod screen;
 #[cfg(windows)]
 mod screen_audio;
+mod speech;
 mod token;
 mod transport;
 pub mod video;

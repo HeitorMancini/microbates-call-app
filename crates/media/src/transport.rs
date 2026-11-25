@@ -29,6 +29,7 @@ use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 
 use crate::hub::{screen_audio_key, MediaHub, ScreenOutput, SAMPLE_RATE};
 use crate::hwenc::{self, HwConfig, HwProbe, HwScreenEncoder};
+use crate::speech::SpeechDetector;
 
 /// Identity prefix of the WebView's subscribe-only video client (must match the
 /// token-server's `VIEWER_IDENTITY_PREFIX`); never shown in the roster.
@@ -469,9 +470,27 @@ impl Transport for LiveKitTransport {
             }
         };
 
+        let (tx, rx) = mpsc::channel(256);
         let (mic_tx, mut mic_rx) = mpsc::channel::<Vec<i16>>(50);
+        let speaking_tx = tx.clone();
+        let speaking_id = local_identity.clone();
         let mic_pump = tokio::spawn(async move {
-            while let Some(samples) = mic_rx.recv().await {
+            let mut detector = SpeechDetector::default();
+            loop {
+                let samples = match tokio::time::timeout(SPEECH_IDLE, mic_rx.recv()).await {
+                    Ok(Some(samples)) => samples,
+                    Ok(None) => break,
+                    Err(_) => {
+                        // Muted: no chunks arrive, so silence the indicator.
+                        if let Some(speaking) = detector.reset() {
+                            send_speaking(&speaking_tx, &speaking_id, speaking).await;
+                        }
+                        continue;
+                    }
+                };
+                if let Some(speaking) = detector.push(&samples) {
+                    send_speaking(&speaking_tx, &speaking_id, speaking).await;
+                }
                 let samples_per_channel = samples.len() as u32;
                 let frame = AudioFrame {
                     data: samples.into(),
@@ -500,7 +519,6 @@ impl Transport for LiveKitTransport {
                 }
             }
         }
-        let (tx, rx) = mpsc::channel(256);
         let events = tokio::spawn(pump_events(
             room_events,
             tx,
@@ -945,9 +963,6 @@ async fn pump_events(
                     muted: !has_source(&p, TrackSource::Microphone, true),
                 })
             }
-            RoomEvent::ActiveSpeakersChanged { speakers } => Some(TransportEvent::ActiveSpeakers(
-                speakers.iter().map(|p| p.identity().to_string()).collect(),
-            )),
             RoomEvent::TrackSubscribed {
                 track,
                 publication,
@@ -955,11 +970,17 @@ async fn pump_events(
             } => {
                 let sid = track.sid();
                 let handle = match track {
-                    RemoteTrack::Audio(audio) => readers.spawn(read_audio(
-                        NativeAudioStream::new(audio.rtc_track(), SAMPLE_RATE as i32, 1),
-                        audio_mixer_key(&identity(&participant), publication.source()),
-                        hub.clone(),
-                    )),
+                    RemoteTrack::Audio(audio) => {
+                        let source = publication.source();
+                        let speaking = (source == TrackSource::Microphone)
+                            .then(|| (tx.clone(), identity(&participant)));
+                        readers.spawn(read_audio(
+                            NativeAudioStream::new(audio.rtc_track(), SAMPLE_RATE as i32, 1),
+                            audio_mixer_key(&identity(&participant), source),
+                            hub.clone(),
+                            speaking,
+                        ))
+                    }
                     RemoteTrack::Video(video) => readers.spawn(read_video(
                         NativeVideoStream::new(video.rtc_track()),
                         identity(&participant),
@@ -996,10 +1017,46 @@ async fn pump_events(
     }
 }
 
-async fn read_audio(mut stream: NativeAudioStream, mixer_key: String, hub: MediaHub) {
-    while let Some(frame) = stream.next().await {
+async fn read_audio(
+    mut stream: NativeAudioStream,
+    mixer_key: String,
+    hub: MediaHub,
+    speaking: Option<(mpsc::Sender<TransportEvent>, String)>,
+) {
+    let mut detector = SpeechDetector::default();
+    loop {
+        let frame = match tokio::time::timeout(SPEECH_IDLE, stream.next()).await {
+            Ok(Some(frame)) => frame,
+            Ok(None) => break,
+            Err(_) => {
+                if let (Some((tx, id)), Some(speaking)) = (&speaking, detector.reset()) {
+                    send_speaking(tx, id, speaking).await;
+                }
+                continue;
+            }
+        };
         hub.push_remote_audio(&mixer_key, &frame.data);
+        if let Some((tx, id)) = &speaking {
+            if let Some(speaking) = detector.push(&frame.data) {
+                send_speaking(tx, id, speaking).await;
+            }
+        }
     }
+    if let (Some((tx, id)), Some(speaking)) = (&speaking, detector.reset()) {
+        send_speaking(tx, id, speaking).await;
+    }
+}
+
+/// No audio for this long means the sender is muted or gone.
+const SPEECH_IDLE: Duration = Duration::from_millis(150);
+
+async fn send_speaking(tx: &mpsc::Sender<TransportEvent>, id: &str, speaking: bool) {
+    let _ = tx
+        .send(TransportEvent::SpeakingChanged {
+            id: id.to_owned(),
+            speaking,
+        })
+        .await;
 }
 
 /// Mixer channel of a remote audio track: screen audio is kept apart from the voice.

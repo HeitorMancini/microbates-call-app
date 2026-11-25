@@ -413,9 +413,9 @@ impl Actor {
                     p.sharing_screen = sharing;
                 }
             }
-            TransportEvent::ActiveSpeakers(ids) => {
-                for p in &mut self.participants {
-                    p.speaking = ids.contains(&p.id);
+            TransportEvent::SpeakingChanged { id, speaking } => {
+                if let Some(p) = self.participants.iter_mut().find(|p| p.id == id) {
+                    p.speaking = speaking;
                 }
             }
             TransportEvent::Disconnected { reason } => {
@@ -467,12 +467,7 @@ impl Actor {
                 let _ = self.apply_audio_state().await;
                 if let Some(preset) = self.sharing {
                     let with_audio = self.sharing_audio;
-                    if let Err(e) = self
-                        .deps
-                        .transport
-                        .publish_screen(preset, with_audio)
-                        .await
-                    {
+                    if let Err(e) = self.deps.transport.publish_screen(preset, with_audio).await {
                         tracing::warn!(error = %e, "failed to republish screen after reconnect");
                     }
                 }
@@ -510,12 +505,7 @@ impl Actor {
             .start(source, preset, with_audio)
             .await
             .map_err(CoreError::screen)?;
-        if let Err(e) = self
-            .deps
-            .transport
-            .publish_screen(preset, with_audio)
-            .await
-        {
+        if let Err(e) = self.deps.transport.publish_screen(preset, with_audio).await {
             self.deps.screen.stop().await;
             return Err(CoreError::transport(e));
         }
