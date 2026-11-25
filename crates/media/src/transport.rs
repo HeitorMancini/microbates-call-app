@@ -27,7 +27,7 @@ use sheeshcord_core::{
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 
-use crate::hub::{MediaHub, ScreenOutput, SAMPLE_RATE};
+use crate::hub::{screen_audio_key, MediaHub, ScreenOutput, SAMPLE_RATE};
 use crate::hwenc::{self, HwConfig, HwProbe, HwScreenEncoder};
 
 /// Identity prefix of the WebView's subscribe-only video client (must match the
@@ -185,6 +185,74 @@ struct ScreenTrack {
     info: ScreenEncoderInfo,
     /// The GPU encoder thread, while the screen is hardware encoded.
     hw: Option<Arc<HwScreenEncoder>>,
+    audio: Option<ScreenAudioTrack>,
+}
+
+/// The audio track published next to the screen video.
+struct ScreenAudioTrack {
+    publication: LocalTrackPublication,
+    pump: JoinHandle<()>,
+}
+
+/// Publishes the screen-share audio track and starts feeding it from the hub. `None`
+/// (after a warning) when it cannot be published: the video is unaffected.
+async fn publish_screen_audio(
+    local: &LocalParticipant,
+    hub: &MediaHub,
+) -> Option<ScreenAudioTrack> {
+    let source = NativeAudioSource::new(
+        AudioSourceOptions {
+            echo_cancellation: false,
+            noise_suppression: false,
+            auto_gain_control: false,
+        },
+        SAMPLE_RATE,
+        1,
+        100,
+    );
+    let track =
+        LocalAudioTrack::create_audio_track("screen-audio", RtcAudioSource::Native(source.clone()));
+    let publication = local
+        .publish_track(
+            LocalTrack::Audio(track),
+            TrackPublishOptions {
+                source: TrackSource::ScreenshareAudio,
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(
+            |e| tracing::warn!(error = %e, "screen audio publish failed; sharing without audio"),
+        )
+        .ok()?;
+    let (tx, mut rx) = mpsc::channel::<Vec<i16>>(50);
+    let pump = tokio::spawn(async move {
+        while let Some(samples) = rx.recv().await {
+            let samples_per_channel = samples.len() as u32;
+            let frame = AudioFrame {
+                data: samples.into(),
+                sample_rate: SAMPLE_RATE,
+                num_channels: 1,
+                samples_per_channel,
+            };
+            if let Err(e) = source.capture_frame(&frame).await {
+                tracing::warn!(error = %e, "failed to push screen audio");
+            }
+        }
+    });
+    hub.set_screen_audio_sink(Some(tx));
+    Some(ScreenAudioTrack { publication, pump })
+}
+
+impl ScreenTrack {
+    /// Stops the audio pump and removes the audio track; the video track is left alone.
+    async fn stop_audio(&mut self, hub: &MediaHub, local: &LocalParticipant) {
+        hub.set_screen_audio_sink(None);
+        if let Some(audio) = self.audio.take() {
+            audio.pump.abort();
+            let _ = local.unpublish_track(&audio.publication.sid()).await;
+        }
+    }
 }
 
 struct Active {
@@ -201,6 +269,9 @@ impl Active {
         self.mic_pump.abort();
         if let Some(screen) = &self.screen {
             screen.maintenance.abort();
+            if let Some(audio) = &screen.audio {
+                audio.pump.abort();
+            }
         }
     }
 }
@@ -469,21 +540,15 @@ impl Transport for LiveKitTransport {
         Ok(())
     }
 
-    async fn publish_screen(
-        &self,
-        preset: ScreenPreset,
-        _with_audio: bool,
-    ) -> Result<(), BoxError> {
+    async fn publish_screen(&self, preset: ScreenPreset, with_audio: bool) -> Result<(), BoxError> {
         let mut guard = self.active.lock().await;
         let active = guard.as_mut().ok_or("not connected")?;
-        if let Some(screen) = active.screen.take() {
+        if let Some(mut screen) = active.screen.take() {
             screen.maintenance.abort();
             self.hub.set_screen_sink(None);
-            let _ = active
-                .room
-                .local_participant()
-                .unpublish_track(&screen.publication.sid())
-                .await;
+            let local = active.room.local_participant();
+            screen.stop_audio(&self.hub, &local).await;
+            let _ = local.unpublish_track(&screen.publication.sid()).await;
         }
 
         let (width, height) = (preset.width(), preset.height());
@@ -510,11 +575,17 @@ impl Transport for LiveKitTransport {
                 sid: publication.sid(),
             }));
             // The pre-encoded source lives in the encoder thread.
+            let audio = if with_audio {
+                publish_screen_audio(&local, &self.hub).await
+            } else {
+                None
+            };
             active.screen = Some(ScreenTrack {
                 publication,
                 maintenance,
                 info,
                 hw: Some(hw),
+                audio,
             });
             return Ok(());
         }
@@ -539,11 +610,17 @@ impl Transport for LiveKitTransport {
             hw: None,
             sid: publication.sid(),
         }));
+        let audio = if with_audio {
+            publish_screen_audio(&local, &self.hub).await
+        } else {
+            None
+        };
         active.screen = Some(ScreenTrack {
             publication,
             maintenance,
             info,
             hw: None,
+            audio,
         });
         Ok(())
     }
@@ -556,13 +633,11 @@ impl Transport for LiveKitTransport {
         let Some(active) = guard.as_mut() else {
             return Ok(());
         };
-        if let Some(screen) = active.screen.take() {
+        if let Some(mut screen) = active.screen.take() {
             screen.maintenance.abort();
-            active
-                .room
-                .local_participant()
-                .unpublish_track(&screen.publication.sid())
-                .await?;
+            let local = active.room.local_participant();
+            screen.stop_audio(&self.hub, &local).await;
+            local.unpublish_track(&screen.publication.sid()).await?;
         }
         Ok(())
     }
@@ -793,7 +868,9 @@ async fn republish_screen_software(job: &mut ScreenJob, codecs: &[VideoCodec]) -
         Err(e) => {
             tracing::error!(error = %e, "screen republish failed");
             job.hub.set_screen_sink(None);
-            active.screen = None;
+            if let Some(mut dead) = active.screen.take() {
+                dead.stop_audio(&job.hub, &local).await;
+            }
             false
         }
     }
@@ -872,13 +949,15 @@ async fn pump_events(
                 speakers.iter().map(|p| p.identity().to_string()).collect(),
             )),
             RoomEvent::TrackSubscribed {
-                track, participant, ..
+                track,
+                publication,
+                participant,
             } => {
                 let sid = track.sid();
                 let handle = match track {
                     RemoteTrack::Audio(audio) => readers.spawn(read_audio(
                         NativeAudioStream::new(audio.rtc_track(), SAMPLE_RATE as i32, 1),
-                        identity(&participant),
+                        audio_mixer_key(&identity(&participant), publication.source()),
                         hub.clone(),
                     )),
                     RemoteTrack::Video(video) => readers.spawn(read_video(
@@ -917,9 +996,18 @@ async fn pump_events(
     }
 }
 
-async fn read_audio(mut stream: NativeAudioStream, participant: String, hub: MediaHub) {
+async fn read_audio(mut stream: NativeAudioStream, mixer_key: String, hub: MediaHub) {
     while let Some(frame) = stream.next().await {
-        hub.push_remote_audio(&participant, &frame.data);
+        hub.push_remote_audio(&mixer_key, &frame.data);
+    }
+}
+
+/// Mixer channel of a remote audio track: screen audio is kept apart from the voice.
+fn audio_mixer_key(identity: &str, source: TrackSource) -> String {
+    if source == TrackSource::ScreenshareAudio {
+        screen_audio_key(identity)
+    } else {
+        identity.to_owned()
     }
 }
 
@@ -936,6 +1024,15 @@ async fn read_video(mut stream: NativeVideoStream, participant: String, hub: Med
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audio_mixer_key_separates_screen_audio() {
+        assert_eq!(audio_mixer_key("bob", TrackSource::Microphone), "bob");
+        assert_eq!(
+            audio_mixer_key("bob", TrackSource::ScreenshareAudio),
+            "bob#screen"
+        );
+    }
 
     #[test]
     fn maintenance_decisions() {
