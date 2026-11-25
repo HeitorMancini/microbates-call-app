@@ -3,7 +3,11 @@
   import { arrastavel } from '../lib/janela';
   import type { ConnectionStatus } from '../lib/types';
   import ControlBar from './ControlBar.svelte';
+  import Dialog from './Dialog.svelte';
+  import DeviceSettings from './DeviceSettings.svelte';
+  import Icon from './Icon.svelte';
   import Palco from './Palco.svelte';
+  import SeletorSala from './SeletorSala.svelte';
 
   let { store }: { store: RoomStore } = $props();
 
@@ -15,12 +19,7 @@
     disconnected: 'Desconectado',
   };
 
-  const speakingNow = $derived(store.participants.filter((p) => p.speaking).length);
-  const headcount = $derived.by(() => {
-    const n = store.participants.length;
-    const people = `${n} ${n === 1 ? 'pessoa' : 'pessoas'}`;
-    return speakingNow > 0 ? `${people}, ${speakingNow} falando` : people;
-  });
+  let devicesOpen = $state(false);
 
   function onKey(e: KeyboardEvent) {
     if (!(e.ctrlKey && e.shiftKey)) return;
@@ -38,22 +37,28 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="sala">
-  <header class="cabecalho" use:arrastavel={{ maximizarComDuploClique: true }}>
-    <div class="identidade">
-      <h1 class="nome-sala">{store.roomName}</h1>
-      <p class="servidor">{store.serverUrl}</p>
-    </div>
-    <div class="estado" data-status={store.status}>
-      <span class="ponto" aria-hidden="true"></span>
-      <span>{STATUS_LABEL[store.status]}</span>
-      <span class="contagem">{headcount}</span>
-    </div>
+  <Palco participants={store.participants} backend={store.backend} />
+
+  <header class="barra" use:arrastavel={{ maximizarComDuploClique: true }}>
+    <span class="marca"><b>μ</b>Chat</span>
+    {#if store.status !== 'connected'}
+      <span class="status">{STATUS_LABEL[store.status]}</span>
+    {/if}
   </header>
 
-  <main class="area-palco" aria-label="Sala {store.roomName}">
-    <!-- Reescrito na Tarefa 5 (moldura da call); por ora só hospeda o Palco. -->
-    <Palco participants={store.participants} backend={store.backend} />
-  </main>
+  <div class="topo">
+    <h1 class="nome-sala">
+      <SeletorSala atual={store.roomName} ocupado={store.trocando} onescolher={(sala) => store.trocarSala(sala)} />
+    </h1>
+    <div class="acoes">
+      <button type="button" class="quad" aria-label="Configurações" onclick={() => (devicesOpen = true)}>
+        <Icon name="settings" size={26} />
+      </button>
+      <button type="button" class="quad sair" aria-label="Sair da call" onclick={() => store.leave()}>
+        <Icon name="phone-leave" size={26} />
+      </button>
+    </div>
+  </div>
 
   {#if store.error}
     <div class="aviso" role="alert">
@@ -62,100 +67,114 @@
     </div>
   {/if}
 
-  <footer class="rodape">
+  <div class="rodape">
     <ControlBar {store} />
-  </footer>
+    <button
+      type="button"
+      class="chat"
+      aria-disabled="true"
+      aria-label="Chat de texto (em breve)"
+      title="Chat de texto · em breve"
+    >
+      <Icon name="chat" size={34} />
+    </button>
+  </div>
 
   <div class="sr-only" aria-live="polite" aria-atomic="true">{store.announcement}</div>
 </div>
 
+<Dialog bind:open={devicesOpen} id="dispositivos" title="Dispositivos de áudio">
+  <DeviceSettings {store} onDone={() => (devicesOpen = false)} />
+</Dialog>
+
 <style>
   .sala {
+    position: relative;
     height: 100%;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto auto;
-    gap: 1rem;
-    /* Topo maior: os controles da janela ficam acima do cabeçalho. */
-    padding: 2.5rem clamp(1rem, 3vw, 2rem) 1.25rem;
-    box-sizing: border-box;
   }
 
-  .cabecalho {
+  .barra {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 34px;
+    z-index: 5;
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 0.75rem 2rem;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0 12px 0 16px;
   }
 
-  .identidade {
-    min-width: 0;
+  .marca {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--color-nevoa);
+  }
+
+  .marca b {
+    color: #ff2e6e;
+    font-weight: 800;
+  }
+
+  .status {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-nevoa);
+  }
+
+  .topo {
+    position: absolute;
+    top: 44px;
+    left: 40px;
+    right: 40px;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
   .nome-sala {
     margin: 0;
-    font-size: clamp(2rem, 5vw, 3.25rem);
-    line-height: 0.95;
-    font-weight: 800;
-    font-variation-settings: 'wdth' 75;
-    letter-spacing: -0.03em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
   }
 
-  .servidor {
-    margin: 0.35rem 0 0;
-    color: var(--color-nevoa);
-    font-size: 0.9rem;
-  }
-
-  .estado {
+  .acoes {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem 0.6rem;
-    font-weight: 600;
+    gap: 12px;
   }
 
-  .ponto {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--color-nevoa);
-  }
-
-  .estado[data-status='connected'] .ponto {
-    background: var(--color-sinal);
-  }
-
-  .estado[data-status='reconnecting'] .ponto,
-  .estado[data-status='connecting'] .ponto {
-    background: var(--color-valvula);
-    animation: piscar 900ms ease-in-out infinite alternate;
-  }
-
-  .estado[data-status='error'] .ponto {
-    background: var(--color-corte);
-  }
-
-  @keyframes piscar {
-    to {
-      opacity: 0.25;
-    }
-  }
-
-  .contagem {
-    font-weight: 400;
+  .quad {
+    width: 56px;
+    height: 56px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: var(--color-placa);
+    border: 1px solid var(--color-trilho);
     color: var(--color-nevoa);
+    transition:
+      background-color 160ms ease,
+      transform 160ms ease,
+      color 160ms ease;
   }
 
-  .area-palco {
-    position: relative;
-    min-height: 0;
+  .quad:hover {
+    background: var(--color-valvula-fundo);
+    transform: translateY(-1px);
+  }
+
+  .quad.sair:hover {
+    color: var(--color-corte);
   }
 
   .aviso {
+    position: absolute;
+    top: 112px;
+    left: 40px;
+    right: 40px;
+    z-index: 4;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -166,4 +185,39 @@
     border: 1px solid var(--color-corte);
   }
 
+  .rodape {
+    position: absolute;
+    bottom: 36px;
+    left: 40px;
+    right: 40px;
+    z-index: 4;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
+  .chat {
+    position: relative;
+    width: 76px;
+    height: 76px;
+    display: grid;
+    place-items: center;
+    border-radius: 18px;
+    background: var(--color-placa);
+    border: 1px solid var(--color-trilho);
+    color: var(--color-nevoa);
+    cursor: not-allowed;
+  }
+
+  .chat::after {
+    content: '';
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ff2e6e;
+    box-shadow: 0 0 0 3px var(--color-placa);
+  }
 </style>

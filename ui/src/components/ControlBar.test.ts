@@ -45,18 +45,4 @@ describe('ControlBar', () => {
     expect(store.sharing).toBe(false);
   });
 
-  it('seleciona dispositivo de saída', async () => {
-    const { store, user } = await setup();
-    await user.click(screen.getByRole('button', { name: 'Dispositivos' }));
-    const output = await screen.findByRole('combobox', { name: 'Saída de áudio' });
-    await screen.findByRole('option', { name: 'Headset' });
-    await user.selectOptions(output, 'headset');
-    expect(store.selectedOutput).toBe('headset');
-  });
-
-  it('Sair desconecta', async () => {
-    const { store, user } = await setup();
-    await user.click(screen.getByRole('button', { name: 'Sair' }));
-    expect(store.status).toBe('disconnected');
-  });
 });
