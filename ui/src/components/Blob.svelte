@@ -123,6 +123,10 @@
     height: 96px;
     display: grid;
     place-items: center;
+    /* Troca palco/roda: mesma curva de 650 ms do transform do Palco. */
+    transition:
+      width 650ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      height 650ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .pequeno .avatar {
@@ -182,6 +186,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    transition: font-size 650ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .pequeno .nome {

@@ -153,7 +153,7 @@
     top: 0;
     left: 0;
     pointer-events: auto;
-    transition: transform 650ms var(--ease-saida);
+    transition: transform 650ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .tela {
@@ -163,9 +163,9 @@
     overflow: hidden;
     background: var(--color-casco);
     transition:
-      left 650ms var(--ease-saida),
-      top 650ms var(--ease-saida),
-      width 650ms var(--ease-saida),
-      height 650ms var(--ease-saida);
+      left 650ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      top 650ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      width 650ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      height 650ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 </style>
