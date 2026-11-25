@@ -54,6 +54,21 @@ describe('RoomScreen', () => {
     expect(store.selectedOutput).toBe('headset');
   });
 
+  it('atualização pronta: indicador pede confirmação antes de reiniciar', async () => {
+    const { store, user } = await setup();
+    const install = vi.spyOn(store.backend, 'installUpdate');
+    expect(screen.queryByRole('button', { name: /Reiniciar/ })).toBeNull();
+
+    store.update = { status: 'downloading', percent: 40 };
+    expect(await screen.findByRole('status')).toHaveTextContent('Baixando atualização 40%');
+
+    store.update = { status: 'ready', version: '0.6.0' };
+    await user.click(await screen.findByRole('button', { name: 'Reiniciar para atualizar (v0.6.0)' }));
+    expect(install).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Isso encerra a call. Reiniciar?' }));
+    expect(install).toHaveBeenCalledOnce();
+  });
+
   it('Sair da call desconecta', async () => {
     const { store, user } = await setup();
     await user.click(screen.getByRole('button', { name: 'Sair da call' }));

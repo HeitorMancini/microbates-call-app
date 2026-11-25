@@ -98,6 +98,22 @@ pnpm tauri build --bundles nsis
 > `CARGO_TARGET_DIR` curto, como `C:\t`. Ao criar uma tag `v*`, o workflow `release.yml`
 > gera o instalador e o anexa ao GitHub Release.
 
+### Atualização automática (OTA)
+
+O app verifica `releases/latest/download/latest.json` ao abrir e a cada 30 min, baixa a
+versão nova em segundo plano e mostra ao lado de "μChat" o botão "Reiniciar para
+atualizar" (o clique pede confirmação, pois encerra a call). Os pacotes são assinados:
+
+- Chave pública: `plugins.updater.pubkey` em `src-tauri/tauri.conf.json`.
+- Chave privada: cadastre nos secrets do repositório `TAURI_SIGNING_PRIVATE_KEY`
+  (conteúdo do arquivo) e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (vazio se não tiver senha).
+  Nunca a versione. Para gerar outro par: `pnpm tauri signer generate -w <arquivo>`.
+- `pnpm tauri build` local também exige `TAURI_SIGNING_PRIVATE_KEY` (por causa de
+  `createUpdaterArtifacts`). Para um build sem assinatura, passe
+  `--config '{"bundle":{"createUpdaterArtifacts":false}}'`.
+- Ao publicar, aumente `version` em `tauri.conf.json` (e no workspace) e crie a tag `vX.Y.Z`
+  com o mesmo número. Versões anteriores à 0.6.0 não têm o updater e precisam ser reinstaladas uma vez.
+
 ## Usando
 
 1. Instale o μChat pelo instalador da [última release](https://github.com/HeitorMancini/microbates-call-app/releases)

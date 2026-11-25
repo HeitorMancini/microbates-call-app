@@ -6,6 +6,7 @@
   import Dialog from './Dialog.svelte';
   import DeviceSettings from './DeviceSettings.svelte';
   import Icon from './Icon.svelte';
+  import IndicadorAtualizacao from './IndicadorAtualizacao.svelte';
   import Palco from './Palco.svelte';
   import SeletorSala from './SeletorSala.svelte';
 
@@ -43,6 +44,7 @@
 
   <header class="barra" use:arrastavel={{ maximizarComDuploClique: true }}>
     <span class="marca"><b>μ</b>Chat</span>
+    <IndicadorAtualizacao {store} />
     {#if store.status !== 'connected'}
       <span class="status">{STATUS_LABEL[store.status]}</span>
     {/if}

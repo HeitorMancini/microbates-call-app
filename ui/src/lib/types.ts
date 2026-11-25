@@ -87,7 +87,13 @@ export const SALAS: readonly string[] = ['Call 1', 'Call 2', 'Call 3'];
 export const EVENTS = {
   state: 'room://state',
   participants: 'room://participants',
+  update: 'update://state',
 } as const;
+
+export type UpdateState =
+  | { status: 'idle' }
+  | { status: 'downloading'; percent: number | null }
+  | { status: 'ready'; version: string };
 
 export type Unlisten = () => void;
 
@@ -105,6 +111,10 @@ export interface Backend {
   stopScreenShare(): Promise<void>;
   onRoomState(cb: (state: RoomState) => void): Promise<Unlisten>;
   onParticipants(cb: (participants: Participant[]) => void): Promise<Unlisten>;
+  getUpdateState(): Promise<UpdateState>;
+  onUpdateState(cb: (state: UpdateState) => void): Promise<Unlisten>;
+  /** Instala a atualização já baixada e reinicia o app (encerra a call). */
+  installUpdate(): Promise<void>;
   /** Abre o canal de vídeo (decodificado pela WebView, com aceleração de hardware). */
   openVideo(): Promise<VideoSession>;
 }

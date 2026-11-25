@@ -9,6 +9,7 @@ import type {
   ScreenPreset,
   ScreenSource,
   Unlisten,
+  UpdateState,
   VideoSession,
   VideoUpdate,
 } from './types';
@@ -265,6 +266,9 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
 
     onRoomState: subscribe('state'),
     onParticipants: subscribe('participants'),
+    getUpdateState: async () => ({ status: 'idle' }) as UpdateState,
+    onUpdateState: async () => () => {},
+    installUpdate: async () => {},
     openVideo: async () => videoSession(),
   };
 }

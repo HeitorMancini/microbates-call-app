@@ -10,6 +10,7 @@ import type {
   ScreenPreset,
   ScreenSource,
   Unlisten,
+  UpdateState,
 } from './types';
 
 /** Estado da sala em runes. Não conhece DOM: testável só com um `Backend`. */
@@ -32,6 +33,7 @@ export class RoomStore {
   trocando = $state(false);
   /** Última troca de sala falhou: mantém a call aberta mostrando o erro. */
   falhaTroca = $state(false);
+  update = $state<UpdateState>({ status: 'idle' });
 
   local = $derived(this.participants.find((p) => p.isLocal) ?? null);
   muted = $derived(this.local?.muted ?? false);
@@ -72,7 +74,11 @@ export class RoomStore {
         this.backend.onParticipants((list) => {
           this.participants = list;
         }),
+        this.backend.onUpdateState((s) => {
+          this.update = s;
+        }),
       ]);
+      this.update = await this.backend.getUpdateState().catch(() => this.update);
     })();
     return this.#ready;
   }
@@ -111,6 +117,10 @@ export class RoomStore {
     if (ok) this.#ultimo = clean;
     if (!ok && this.status === 'connecting') this.status = 'error';
     return ok;
+  }
+
+  async installUpdate() {
+    await this.#run(() => this.backend.installUpdate());
   }
 
   async leave() {

@@ -38,12 +38,31 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --bundles nsis
+      - name: latest.json do updater
+        run: |
+          $dir = 'C:/t/release/bundle/nsis'
+          $exe = Get-ChildItem "$dir/*-setup.exe" | Select-Object -First 1
+          $sig = (Get-Content "$($exe.FullName).sig" -Raw).Trim()
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $tag = if ('${{ github.ref }}' -like 'refs/tags/*') { '${{ github.ref_name }}' } else { "v$version" }
+          $url = "https://github.com/${{ github.repository }}/releases/download/$tag/$($exe.Name)"
+          @{
+            version  = $version
+            pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            platforms = @{ 'windows-x86_64' = @{ signature = $sig; url = $url } }
+          } | ConvertTo-Json -Depth 5 | Set-Content "$dir/latest.json"
       - name: Anexar ao Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: C:/t/release/bundle/nsis/*.exe
+          files: |
+            C:/t/release/bundle/nsis/*.exe
+            C:/t/release/bundle/nsis/*.exe.sig
+            C:/t/release/bundle/nsis/latest.json
           generate_release_notes: true
           fail_on_unmatched_files: true
       - name: Artefato (execução manual)
@@ -51,5 +70,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sheeshcord-windows-installer
-          path: C:/t/release/bundle/nsis/*.exe
+          path: |
+            C:/t/release/bundle/nsis/*.exe
+            C:/t/release/bundle/nsis/*.exe.sig
+            C:/t/release/bundle/nsis/latest.json
           if-no-files-found: error

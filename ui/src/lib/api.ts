@@ -8,6 +8,7 @@ import {
   type Participant,
   type RoomState,
   type ScreenSource,
+  type UpdateState,
   type ViewerCredentials,
 } from './types';
 
@@ -33,6 +34,9 @@ export function createTauriBackend(): Backend {
     stopScreenShare: () => invoke('stop_screen_share'),
     onRoomState: on<RoomState>(EVENTS.state),
     onParticipants: on<Participant[]>(EVENTS.participants),
+    getUpdateState: () => invoke<UpdateState>('update_state'),
+    onUpdateState: on<UpdateState>(EVENTS.update),
+    installUpdate: () => invoke('install_update'),
     openVideo: async () => {
       const creds = await invoke<ViewerCredentials>('viewer_credentials');
       const { connectVideoSession } = await import('./video');

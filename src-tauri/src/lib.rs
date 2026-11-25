@@ -4,6 +4,7 @@
 
 pub mod model;
 pub mod room;
+pub mod update;
 
 use std::sync::Arc;
 
@@ -201,7 +202,12 @@ fn desligar_autofill(_janela: &tauri::WebviewWindow) {}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            app.manage(update::UpdateService::new());
+            if !cfg!(debug_assertions) {
+                tauri::async_runtime::spawn(update::run(app.handle().clone()));
+            }
             let sink = Arc::new(TauriSink(app.handle().clone()));
             let hub = MediaHub::default();
             let deps = media_dependencies(&hub, fake_media_enabled());
@@ -226,6 +232,8 @@ pub fn run() {
             start_screen_share,
             stop_screen_share,
             viewer_credentials,
+            update::update_state,
+            update::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o μChat");

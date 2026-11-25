@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-updater = "2"
 core = { path = "../crates/core" }
 media = { path = "../crates/media", features = ["fake"] }
 serde = { workspace = true }
