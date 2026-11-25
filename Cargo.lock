@@ -3044,6 +3044,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "wasapi",
  "windows",
  "windows-capture",
 ]
@@ -5573,7 +5574,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -6237,6 +6238,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec4cdd0dd910afe868b7ef477227d8d538b46b3075031afee8a9f2acb0a2ed0b"
 dependencies = [
  "try-lock",
+]
+
+[[package]]
+name = "wasapi"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58b35dbcb6fae6fbaba9f6f52a22686bb405978ee112ed6eb33d98bd63c97583"
+dependencies = [
+ "log",
+ "num-integer",
+ "thiserror 2.0.21",
+ "windows",
+ "windows-core",
 ]
 
 [[package]]

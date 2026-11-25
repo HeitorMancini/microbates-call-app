@@ -15,6 +15,8 @@ mod hub;
 // GPU screen encoder (Media Foundation).
 mod hwenc;
 mod screen;
+#[cfg(windows)]
+mod screen_audio;
 mod token;
 mod transport;
 pub mod video;
