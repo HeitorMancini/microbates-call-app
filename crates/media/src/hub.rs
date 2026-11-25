@@ -33,6 +33,11 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Mixer key of the screen-share audio of `identity`, kept apart from their voice.
+pub(crate) fn screen_audio_key(identity: &str) -> String {
+    format!("{identity}#screen")
+}
+
 /// Limits applied to frames forwarded to the UI (`room://screen-frame`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreviewConfig {
@@ -141,6 +146,7 @@ struct PreviewThrottle {
 struct Inner {
     started: Instant,
     mic: Mutex<Option<mpsc::Sender<Vec<i16>>>>,
+    screen_audio: Mutex<Option<mpsc::Sender<Vec<i16>>>>,
     screen: Mutex<Option<ScreenSink>>,
     mixer: Mutex<Mixer>,
     previews: broadcast::Sender<PreviewFrame>,
@@ -177,6 +183,7 @@ impl MediaHub {
             inner: Arc::new(Inner {
                 started: Instant::now(),
                 mic: Mutex::new(None),
+                screen_audio: Mutex::new(None),
                 screen: Mutex::new(None),
                 mixer: Mutex::new(Mixer::default()),
                 previews,
@@ -231,6 +238,21 @@ impl MediaHub {
                 .fetch_add(1, Ordering::Relaxed);
         }
         sent
+    }
+
+    // ---- screen audio -> transport ----------------------------------------------------
+
+    pub(crate) fn set_screen_audio_sink(&self, sink: Option<mpsc::Sender<Vec<i16>>>) {
+        *lock(&self.inner.screen_audio) = sink;
+    }
+
+    /// Queues 48 kHz mono PCM for the published screen-share audio track. Returns `false`
+    /// when nothing is listening or the chunk was dropped because the transport lags.
+    pub fn push_screen_audio(&self, samples: &[i16]) -> bool {
+        let guard = lock(&self.inner.screen_audio);
+        guard
+            .as_ref()
+            .is_some_and(|tx| tx.try_send(samples.to_vec()).is_ok())
     }
 
     // ---- screen -> transport ----------------------------------------------------------
@@ -323,7 +345,10 @@ impl MediaHub {
     }
 
     pub fn remove_remote(&self, participant_id: &str) {
-        lock(&self.inner.mixer).sources.remove(participant_id);
+        let mut mixer = lock(&self.inner.mixer);
+        mixer.sources.remove(participant_id);
+        mixer.sources.remove(&screen_audio_key(participant_id));
+        drop(mixer);
         lock(&self.inner.throttle).last.remove(participant_id);
     }
 
@@ -423,6 +448,28 @@ mod tests {
         assert!(hub.push_mic(&[7; SAMPLES_PER_10MS]));
         assert_eq!(rx.recv().await.unwrap()[0], 7);
         assert_eq!(hub.stats().mic_chunks_sent, 1);
+    }
+
+    #[tokio::test]
+    async fn screen_audio_flows_only_when_a_sink_is_installed() {
+        let hub = MediaHub::default();
+        assert!(!hub.push_screen_audio(&[1; SAMPLES_PER_10MS]));
+        let (tx, mut rx) = mpsc::channel(4);
+        hub.set_screen_audio_sink(Some(tx));
+        assert!(hub.push_screen_audio(&[1; SAMPLES_PER_10MS]));
+        assert_eq!(rx.recv().await.unwrap(), vec![1; SAMPLES_PER_10MS]);
+        hub.set_screen_audio_sink(None);
+        assert!(!hub.push_screen_audio(&[1; SAMPLES_PER_10MS]));
+    }
+
+    #[test]
+    fn remove_remote_also_drops_its_screen_audio() {
+        let hub = MediaHub::default();
+        hub.push_remote_audio("a", &[1; SAMPLES_PER_10MS]);
+        hub.push_remote_audio(&screen_audio_key("a"), &[1; SAMPLES_PER_10MS]);
+        assert_eq!(screen_audio_key("a"), "a#screen");
+        hub.remove_remote("a");
+        assert!(lock(&hub.inner.mixer).sources.is_empty());
     }
 
     #[test]
