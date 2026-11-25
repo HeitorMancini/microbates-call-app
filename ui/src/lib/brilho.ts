@@ -9,9 +9,10 @@ export interface Brilho {
   destruir(): void;
 }
 
-export function montarBrilho(alvo: HTMLElement): Brilho {
+export function montarBrilho(alvo: HTMLElement, opcoes?: { nivel?: () => number }): Brilho {
   const root = createRoot(alvo);
   const cheio = { display: 'block', width: '100%', height: '100%' };
+  const nivel = opcoes?.nivel ?? (() => 0.6);
   return {
     atualizar(ativo, cores) {
       root.render(
@@ -20,7 +21,7 @@ export function montarBrilho(alvo: HTMLElement): Brilho {
           look: 'dither',
           theme: 'dark',
           active: ativo,
-          level: 0.6,
+          level: nivel(),
           idle: 0,
           pixelMagnet: 0,
           scale: 1.2,
