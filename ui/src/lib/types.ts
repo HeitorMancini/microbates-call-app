@@ -101,7 +101,7 @@ export interface Backend {
   listAudioDevices(): Promise<AudioDevices>;
   selectAudioDevice(kind: DeviceKind, id: string): Promise<void>;
   listScreenSources(): Promise<ScreenSource[]>;
-  startScreenShare(sourceId: string, preset: ScreenPreset): Promise<void>;
+  startScreenShare(sourceId: string, preset: ScreenPreset, withAudio: boolean): Promise<void>;
   stopScreenShare(): Promise<void>;
   onRoomState(cb: (state: RoomState) => void): Promise<Unlisten>;
   onParticipants(cb: (participants: Participant[]) => void): Promise<Unlisten>;

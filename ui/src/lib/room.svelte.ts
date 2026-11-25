@@ -191,9 +191,9 @@ export class RoomStore {
     });
   }
 
-  async startShare(sourceId: string, preset: ScreenPreset): Promise<boolean> {
+  async startShare(sourceId: string, preset: ScreenPreset, withAudio = true): Promise<boolean> {
     this.sharePreset = preset;
-    const ok = await this.#run(() => this.backend.startScreenShare(sourceId, preset));
+    const ok = await this.#run(() => this.backend.startScreenShare(sourceId, preset, withAudio));
     if (ok) this.announce('Você está compartilhando a tela.');
     return ok;
   }

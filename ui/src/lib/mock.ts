@@ -248,7 +248,7 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
       return structuredClone(SOURCES);
     },
 
-    async startScreenShare(sourceId: string, preset: ScreenPreset) {
+    async startScreenShare(sourceId: string, preset: ScreenPreset, _withAudio = true) {
       if (!SOURCES.some((s) => s.id === sourceId)) throw `Fonte de tela não encontrada: ${sourceId}`;
       const me = requireLocal();
       share = { preset };

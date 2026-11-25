@@ -28,7 +28,8 @@ export function createTauriBackend(): Backend {
     listAudioDevices: () => invoke<AudioDevices>('list_audio_devices'),
     selectAudioDevice: (kind, id) => invoke('select_audio_device', { kind, id }),
     listScreenSources: () => invoke<ScreenSource[]>('list_screen_sources'),
-    startScreenShare: (sourceId, preset) => invoke('start_screen_share', { sourceId, preset }),
+    startScreenShare: (sourceId, preset, withAudio) =>
+      invoke('start_screen_share', { sourceId, preset, withAudio }),
     stopScreenShare: () => invoke('stop_screen_share'),
     onRoomState: on<RoomState>(EVENTS.state),
     onParticipants: on<Participant[]>(EVENTS.participants),

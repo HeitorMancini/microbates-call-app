@@ -8,6 +8,7 @@
   let sourceId = $state<string | null>(null);
   let preset = $state<ScreenPreset>(untrack(() => store.sharePreset));
   let starting = $state(false);
+  let withAudio = $state(true);
 
   $effect(() => {
     void store.loadScreenSources().then(() => {
@@ -19,7 +20,7 @@
     e.preventDefault();
     if (!sourceId) return;
     starting = true;
-    const ok = await store.startShare(sourceId, preset);
+    const ok = await store.startShare(sourceId, preset, withAudio);
     starting = false;
     if (ok) onDone();
   }
@@ -58,6 +59,14 @@
       {/each}
     </div>
   </fieldset>
+
+  <label class="opcao audio">
+    <input type="checkbox" bind:checked={withAudio} />
+    <span class="texto">
+      <span class="titulo">Compartilhar áudio</span>
+      <span class="sub">Janela: só o som do app. Monitor: o som do sistema, sem o do microchat.</span>
+    </span>
+  </label>
 
   <div class="acoes">
     <button type="button" class="botao" onclick={onDone}>Cancelar</button>
@@ -107,7 +116,8 @@
     background: var(--color-valvula-fundo);
   }
 
-  input[type='radio'] {
+  input[type='radio'],
+  input[type='checkbox'] {
     width: 18px;
     height: 18px;
     margin: 0;
@@ -127,6 +137,10 @@
     margin: 0;
     font-size: 0.875rem;
     color: var(--color-nevoa);
+  }
+
+  .audio {
+    margin-bottom: 1.25rem;
   }
 
   .acoes {
