@@ -37,6 +37,11 @@ pub enum RoomError {
     Token(String),
     #[error("Falha na conexão com a sala: {0}")]
     Transport(String),
+    #[error(
+        "Conectou ao servidor, mas a mídia não chegou. Confira se o roteador do servidor \
+         redireciona UDP 50000-50200 e TCP 7881."
+    )]
+    MediaUnreachable,
     #[error("Erro de áudio: {0}")]
     Audio(String),
     #[error("Erro ao compartilhar a tela: {0}")]
@@ -51,6 +56,7 @@ impl From<CoreError> for RoomError {
             CoreError::NotConnected => Self::NotConnected,
             CoreError::AlreadyActive => Self::AlreadyConnected,
             CoreError::Token(m) => Self::Token(m),
+            CoreError::Transport(m) if m.contains("wait_pc_connection") => Self::MediaUnreachable,
             CoreError::Transport(m) => Self::Transport(m),
             CoreError::Audio(m) => Self::Audio(m),
             CoreError::Screen(m) => Self::Screen(m),
@@ -591,5 +597,14 @@ mod tests {
             RoomError::from(CoreError::AlreadyActive),
             RoomError::AlreadyConnected
         );
+    }
+
+    #[test]
+    fn media_timeout_explains_blocked_ports() {
+        let err = RoomError::from(CoreError::Transport(
+            "engine: connection error: wait_pc_connection timed out".into(),
+        ));
+        assert_eq!(err, RoomError::MediaUnreachable);
+        assert!(err.to_string().contains("UDP 50000-50200"));
     }
 }

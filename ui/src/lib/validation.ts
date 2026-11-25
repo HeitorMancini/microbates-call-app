@@ -12,7 +12,7 @@ export function validateJoin(params: JoinParams): JoinErrors {
   const serverUrl = params.serverUrl.trim();
   if (!serverUrl) errors.serverUrl = 'Informe o endereço do servidor.';
   else if (!URL_RE.test(serverUrl))
-    errors.serverUrl = 'Use um endereço como https://live.microbates.com (ws, wss, http ou https).';
+    errors.serverUrl = 'Use um endereço como https://live.microbates.com:8443 (ws, wss, http ou https).';
 
   for (const [key, label] of [
     ['room', 'o nome da sala'],

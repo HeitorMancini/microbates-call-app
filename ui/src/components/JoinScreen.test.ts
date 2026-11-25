@@ -45,7 +45,7 @@ describe('JoinScreen', () => {
 
   it('usa o servidor padrão e envia a senha do grupo', async () => {
     const { store, user } = setup();
-    expect(screen.getByLabelText('Servidor')).toHaveValue('https://live.microbates.com');
+    expect(screen.getByLabelText('Servidor')).toHaveValue('https://live.microbates.com:8443');
     expect(screen.getByLabelText('Senha do grupo')).toHaveAttribute('type', 'password');
     await user.type(screen.getByLabelText('Sala'), 'resenha');
     await user.type(screen.getByLabelText('Seu nome'), 'Ana');

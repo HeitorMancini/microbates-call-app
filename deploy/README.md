@@ -125,7 +125,9 @@ consegue acessá-lo. O fluxo é *pull*:
 2. Na máquina do servidor, o timer `sheeshcord-update` baixa a imagem a cada 5 minutos e recria
    só o container do token-server se ela mudou.
 3. O timer `sheeshcord-ddns` mantém os registros A (`live`, `paper`) na Hostinger apontando para
-   o IP público atual (usa `HOSTINGER_API_TOKEN` do `.env`).
+   o IP público atual (usa `HOSTINGER_API_TOKEN` do `.env`) e reinicia o LiveKit quando o IP
+   muda: o `use_external_ip` só descobre o IP ao iniciar, e com IP velho quem está fora da
+   rede não conecta (`wait_pc_connection timed out`).
 
 Instalação (uma vez, como usuário com acesso ao Docker; precisa de `jq`):
 
@@ -168,6 +170,8 @@ docker compose restart livekit
 | "senha do grupo incorreta"                  | `ACCESS_PASSWORD` no `.env` (sem espaços/aspas extras)                    |
 | "muitas tentativas…"                        | 10 senhas erradas em 15 min pelo mesmo IP; aguarde ou `docker compose restart token-server` |
 | Entra na sala mas sem áudio/"Aguardando imagem" | UDP 50000-50200 (Security List **e** `sudo iptables -L INPUT -n`); TCP 7881 como fallback |
+| `wait_pc_connection timed out` só para quem está fora da rede de casa | O LiveKit anuncia um IP público velho (o IP mudou depois que ele subiu): `docker compose restart livekit`. Confira também o redirecionamento de UDP 50000-50200 e TCP 7881 no roteador |
+| `/health` recusado de fora                  | Use a porta 8443 (`https://live.microbates.com:8443/health`); a Vivo bloqueia a 443 |
 | Funciona em casa, não no trabalho/faculdade | Rede bloqueando UDP: depende do TCP 7881 (sem TURN nesta configuração)    |
 | VM sumiu/parou                              | Recuperação de VM ociosa: converta para Pay As You Go                     |
 

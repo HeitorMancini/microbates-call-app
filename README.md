@@ -97,9 +97,9 @@ pnpm tauri build --bundles nsis
 
 1. Instale o Sheeshcord pelo instalador da [última release](https://github.com/HeitorMancini/microbates-call-app/releases)
    (reinstalar uma versão nova atualiza a existente).
-2. Servidor: `https://live.microbates.com` (já vem preenchido). Informe a **senha do grupo**,
+2. Servidor: `https://live.microbates.com:8443` (já vem preenchido). Informe a **senha do grupo**,
    a sala e seu nome.
-3. Sem áudio/vídeo? Veja se `https://live.microbates.com/health` responde `{"status":"ok"}`
+3. Sem áudio/vídeo? Veja se `https://live.microbates.com:8443/health` responde `{"status":"ok"}`
    e a seção de problemas em [`deploy/README.md`](deploy/README.md).
 
 A qualidade da tela depende do **upload de quem compartilha** (uma cópia para o servidor) e

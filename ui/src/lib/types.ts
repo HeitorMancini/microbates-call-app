@@ -77,7 +77,7 @@ export interface JoinParams {
   password?: string;
 }
 
-export const DEFAULT_SERVER_URL = 'https://live.microbates.com';
+export const DEFAULT_SERVER_URL = 'https://live.microbates.com:8443';
 
 export const EVENTS = {
   state: 'room://state',

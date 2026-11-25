@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Atualiza registros A na Hostinger quando o IP público muda.
+# Atualiza registros A na Hostinger quando o IP público muda e reinicia o LiveKit, que só
+# descobre o IP externo (use_external_ip) ao iniciar: com IP velho, quem está fora da rede
+# fica em "wait_pc_connection timed out".
 set -euo pipefail
 
-ENV_FILE=/opt/sheeshcord/.env
+DIR=${SHEESHCORD_DIR:-/opt/sheeshcord}
+ENV_FILE=$DIR/.env
+STATE=${XDG_STATE_HOME:-$HOME/.local/state}/sheeshcord/livekit-ip
 getv() { grep "^$1=" "$ENV_FILE" | cut -d= -f2- | tr -d '\r"'"'"' '; }
 
 DOMAIN_FULL=$(getv DOMAIN)
@@ -25,3 +29,10 @@ for NAME in "${NAMES[@]}"; do
     -d "$BODY" "$API" >/dev/null
   echo "$(date -Is) $NAME.$ZONE: ${CURRENT:-<vazio>} -> $IP"
 done
+
+if [[ $(cat "$STATE" 2>/dev/null) != "$IP" ]]; then
+  (cd "$DIR" && docker compose restart livekit >/dev/null)
+  mkdir -p "$(dirname "$STATE")"
+  echo "$IP" >"$STATE"
+  echo "$(date -Is) livekit reiniciado para anunciar $IP"
+fi
