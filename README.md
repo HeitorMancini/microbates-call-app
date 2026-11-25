@@ -12,6 +12,8 @@ de amigos (~7 pessoas) jogando juntos. O servidor de mídia (LiveKit) roda num
 - Ao assistir a uma tela, ela vira o palco e os blobs passam para uma fileira no topo (botão para voltar à roda; F = tela cheia).
 - Escolher microfone/saída de áudio.
 - Compartilhar um monitor ou janela (presets 1080p30, 1080p60, 720p30) e assistir à tela dos outros.
+- Compartilhar o áudio junto: janela = só o som do app; monitor = som do sistema, sempre sem o som do próprio microchat
+  (captura por processo do WASAPI, exige Windows 10 2004+; em versões antigas a tela vai sem áudio).
 
 ## Arquitetura
 

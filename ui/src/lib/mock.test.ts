@@ -46,11 +46,11 @@ describe('backend mock', () => {
   it('compartilhamento liga e desliga sharingScreen', async () => {
     const { backend, local } = await connected();
     const [source] = await backend.listScreenSources();
-    await backend.startScreenShare(source.id, '720p30');
+    await backend.startScreenShare(source.id, '720p30', true);
     expect(local().sharingScreen).toBe(true);
     await backend.stopScreenShare();
     expect(local().sharingScreen).toBe(false);
-    await expect(backend.startScreenShare('nada', '720p30')).rejects.toMatch(/não encontrada/);
+    await expect(backend.startScreenShare('nada', '720p30', true)).rejects.toMatch(/não encontrada/);
   });
 
   it('simula fala periodicamente e para ao sair', async () => {
