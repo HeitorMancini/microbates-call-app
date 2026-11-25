@@ -129,15 +129,24 @@ export class RoomStore {
     const estavaCompartilhando = this.sharing;
     this.trocando = true;
     try {
-      await this.backend.leaveRoom();
+      if (!(await this.#run(() => this.backend.leaveRoom()))) {
+        this.falhaTroca = true;
+        return false;
+      }
       const ok = await this.join({ ...this.#ultimo, room: sala });
       this.falhaTroca = !ok;
       if (ok) {
-        if (estavaEnsurdecido) {
-          await this.backend.setDeafened(true);
-          this.deafened = true;
-        } else if (estavaMudo) {
-          await this.backend.setMuted(true);
+        const restaurou = await this.#run(async () => {
+          if (estavaEnsurdecido) {
+            await this.backend.setDeafened(true);
+            this.deafened = true;
+          } else if (estavaMudo) {
+            await this.backend.setMuted(true);
+          }
+        });
+        if (!restaurou) {
+          this.falhaTroca = true;
+          return false;
         }
         if (estavaCompartilhando) this.announce('Compartilhamento encerrado ao trocar de sala.');
       }

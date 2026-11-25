@@ -144,6 +144,19 @@ describe('RoomStore', () => {
     expect(store.presente).toBe(false);
   });
 
+  it('falha do backend ao sair da sala não propaga: resolve false e marca erro', async () => {
+    const store = makeStore();
+    await store.join({ ...join, room: 'Call 1' });
+    const original = store.backend.leaveRoom.bind(store.backend);
+    store.backend.leaveRoom = () => Promise.reject(new Error('leave_room falhou'));
+    expect(await store.trocarSala('Call 2')).toBe(false);
+    expect(store.falhaTroca).toBe(true);
+    expect(store.presente).toBe(true);
+    expect(store.error).not.toBeNull();
+    expect(store.trocando).toBe(false);
+    store.backend.leaveRoom = original;
+  });
+
   it('escolher a sala atual não faz nada', async () => {
     const store = makeStore();
     await store.join({ ...join, room: 'Call 1' });
