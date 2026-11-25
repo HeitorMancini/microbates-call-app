@@ -59,7 +59,7 @@ describe('Blob', () => {
       onassistir,
       nivel,
     });
-    const botao = screen.getByRole('button', { name: 'Assistir a tela de Bia' });
+    const botao = screen.getByRole('button', { name: 'AO VIVO — assistir a tela de Bia' });
     expect(botao).toHaveAttribute('aria-pressed', 'false');
     await user.click(botao);
     expect(onassistir).toHaveBeenCalled();

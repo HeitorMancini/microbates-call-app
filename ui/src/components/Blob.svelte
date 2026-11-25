@@ -78,10 +78,12 @@
     <button
       type="button"
       class="aovivo"
-      aria-label="Assistir a tela de {participant.name}"
+      aria-label="AO VIVO — assistir a tela de {participant.name}"
       aria-pressed={assistindo}
       onclick={() => onassistir?.()}
-    ></button>
+    >
+      AO VIVO
+    </button>
   {/if}
   <div class="avatar" aria-hidden="true">
     <span
@@ -207,16 +209,20 @@
     padding: 2px 8px;
     border: none;
     border-radius: 999px;
-    background: #ff2e4d;
+    /* Mais escuro que o vermelho de destaque (#ff2e4d) para o texto branco em
+       9px/7px bater 4.5:1 de contraste (WCAG AA). */
+    background: #d81b45;
     color: #fff;
     font-size: 9px;
     font-weight: 800;
     letter-spacing: 0.04em;
+    white-space: nowrap;
     cursor: pointer;
   }
 
-  .aovivo::after {
-    /* Rótulo decorativo; o nome acessível vem de aria-label. */
-    content: 'AO VIVO';
+  .pequeno .aovivo {
+    top: -6px;
+    padding: 3px 4px;
+    font-size: 7px;
   }
 </style>

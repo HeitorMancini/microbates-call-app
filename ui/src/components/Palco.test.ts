@@ -48,8 +48,9 @@ describe('Palco', () => {
     render(Palco, { participants: [p({ name: 'Ana' }), p({ name: 'Bia' })], backend });
     const list = screen.getByRole('list', { name: 'Pessoas na sala (2)' });
     const [first] = within(list).getAllByRole('listitem');
-    // Centro − metade do item (430 − 60): roda sem tela, 2 pessoas, janela 1100×720.
-    expect(first).toHaveAttribute('style', expect.stringContaining('370px'));
+    // Centrado no ponto (430) independente da largura real do item; 346 − 48
+    // (metade do avatar grande): roda sem tela, 2 pessoas, janela 1100×720.
+    expect(first).toHaveAttribute('style', expect.stringContaining('translate(calc(430px - 50%), 298px)'));
   });
 
   it('alguém compartilha → modo palco; Roda → tela pequena; clicar na tela → palco', async () => {
@@ -89,7 +90,7 @@ describe('Palco', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Tela de Bia' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Assistir a tela de Caio' }));
+    await user.click(screen.getByRole('button', { name: 'AO VIVO — assistir a tela de Caio' }));
     expect(screen.getByRole('heading', { name: 'Tela de Caio' })).toBeInTheDocument();
   });
 
@@ -105,7 +106,7 @@ describe('Palco', () => {
       backend,
     });
 
-    await user.click(screen.getByRole('button', { name: 'Assistir a tela de Caio' }));
+    await user.click(screen.getByRole('button', { name: 'AO VIVO — assistir a tela de Caio' }));
     expect(screen.getByRole('heading', { name: 'Tela de Caio' })).toBeInTheDocument();
 
     await rerender({

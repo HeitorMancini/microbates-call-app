@@ -12,8 +12,6 @@
   // Metade do corpo do avatar (96px/46px no Blob), para centrar no ponto da roda.
   const METADE_GRANDE = 48;
   const METADE_PEQUENA = 23;
-  // Metade da largura do item (120px), fixa conforme o layout do Palco.
-  const METADE_ITEM = 60;
 
   let raiz: HTMLDivElement | undefined = $state();
   let largura = $state(TAMANHO_SALA.width);
@@ -75,7 +73,10 @@
     const ponto = layout.blobs.get(id);
     if (!ponto) return 'display: none';
     const metade = ponto.pequeno ? METADE_PEQUENA : METADE_GRANDE;
-    return `transform: translate(${ponto.x - METADE_ITEM}px, ${ponto.y - metade}px)`;
+    // translateX usa calc(... - 50%) para centrar o item no ponto não importa a
+    // largura real do <li> (varia com o tamanho do nome); translateY soma a
+    // metade do avatar porque ele é a primeira linha do grid, alinhada ao topo.
+    return `transform: translate(calc(${ponto.x}px - 50%), ${ponto.y - metade}px)`;
   }
 
   function aoClicarNaTela(e: MouseEvent) {
