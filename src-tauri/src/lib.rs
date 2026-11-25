@@ -176,6 +176,27 @@ async fn viewer_credentials(
     })
 }
 
+/// O WebView2 ignora `autocomplete="off"` e mostra nomes digitados antes; desliga as sugestões.
+#[cfg(windows)]
+fn desligar_autofill(janela: &tauri::WebviewWindow) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings4;
+    use windows_core::Interface;
+
+    let _ = janela.with_webview(|wv| unsafe {
+        let ajustes = wv
+            .controller()
+            .CoreWebView2()
+            .and_then(|core| core.Settings())
+            .and_then(|s| s.cast::<ICoreWebView2Settings4>());
+        if let Ok(ajustes) = ajustes {
+            let _ = ajustes.SetIsGeneralAutofillEnabled(false);
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn desligar_autofill(_janela: &tauri::WebviewWindow) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -188,6 +209,9 @@ pub fn run() {
                 tauri::async_runtime::block_on(async move { RoomService::new(deps, sink) });
             app.manage(service);
             app.manage(HttpTokenProvider::new());
+            if let Some(janela) = app.get_webview_window("main") {
+                desligar_autofill(&janela);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -203,7 +227,7 @@ pub fn run() {
             viewer_credentials,
         ])
         .run(tauri::generate_context!())
-        .expect("erro ao iniciar o Sheeshcord");
+        .expect("erro ao iniciar o μChat");
 }
 
 #[cfg(test)]

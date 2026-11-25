@@ -127,7 +127,7 @@
 
   .controle.ativo {
     background: var(--color-valvula);
-    color: var(--color-breu);
+    color: var(--color-valvula-texto);
   }
 
   .controle.sair {

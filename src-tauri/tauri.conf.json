@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Sheeshcord",
+  "productName": "microchat",
   "version": "0.4.1",
   "identifier": "com.sheeshcord.app",
   "build": {
@@ -13,12 +13,14 @@
     "windows": [
       {
         "label": "main",
-        "title": "Sheeshcord",
-        "width": 1100,
-        "height": 720,
-        "minWidth": 720,
-        "minHeight": 520,
-        "backgroundColor": "#0f1a1e"
+        "title": "μChat",
+        "width": 360,
+        "height": 540,
+        "resizable": false,
+        "center": true,
+        "decorations": false,
+        "shadow": true,
+        "backgroundColor": "#0b0b0d"
       }
     ],
     "security": {
@@ -29,11 +31,11 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "publisher": "Sheeshcord",
+    "publisher": "microchat",
     "category": "SocialNetworking",
     "shortDescription": "Voz e compartilhamento de tela para amigos",
-    "longDescription": "Sheeshcord: chamadas de voz e compartilhamento de tela em alta qualidade para grupos pequenos.",
-    "copyright": "© 2026 Sheeshcord (MIT)",
+    "longDescription": "μChat: chamadas de voz e compartilhamento de tela em alta qualidade para grupos pequenos.",
+    "copyright": "© 2026 microchat (MIT)",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -48,7 +50,7 @@
         "displayLanguageSelector": false,
         "languages": ["PortugueseBR", "English"],
         "installerIcon": "icons/icon.ico",
-        "startMenuFolder": "Sheeshcord"
+        "startMenuFolder": "μChat"
       }
     }
   }

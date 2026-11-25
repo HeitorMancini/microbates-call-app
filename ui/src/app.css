@@ -2,23 +2,24 @@
 @import '@fontsource-variable/bricolage-grotesque/standard.css';
 
 /*
-  Sheeshcord — "cabine de rádio à noite".
-  Petróleo profundo como base, giz para texto, âmbar de válvula para quem fala,
-  coral para o que está cortado (mudo, sair). Âmbar é o único acento vivo.
+  μChat — escala monocromática escura, puxada para o cinza neutro.
+  O único acento vivo (--color-valvula) é a cor do blob de quem entra, aplicada
+  em tempo de execução por lib/tema.ts. Coral fica para o que está cortado.
 */
 @theme {
   --font-sans: 'Bricolage Grotesque Variable', ui-sans-serif, system-ui, sans-serif;
 
-  --color-breu: #0f1a1e;
-  --color-casco: #15252b;
-  --color-placa: #1d333a;
-  --color-trilho: #2b464e;
-  --color-giz: #e9f3ef;
-  --color-nevoa: #a3bab4;
-  --color-valvula: #ffb547;
-  --color-valvula-fundo: #3a2c14;
+  --color-breu: #0b0b0d;
+  --color-casco: #141417;
+  --color-placa: #1c1c20;
+  --color-trilho: #2c2c32;
+  --color-giz: #ececf0;
+  --color-nevoa: #a5a5ad;
+  --color-valvula: #6a6a72;
+  --color-valvula-texto: #ececf0;
+  --color-valvula-fundo: #26262b;
   --color-corte: #ff8a7a;
-  --color-corte-fundo: #3d1f1d;
+  --color-corte-fundo: #3a1e1e;
   --color-sinal: #7fe0be;
 
   --radius-pill: 999px;
@@ -67,7 +68,7 @@
 
   ::selection {
     background: var(--color-valvula);
-    color: var(--color-breu);
+    color: var(--color-valvula-texto);
   }
 }
 
@@ -114,7 +115,7 @@
   .botao-primario {
     background: var(--color-valvula);
     border-color: var(--color-valvula);
-    color: var(--color-breu);
+    color: var(--color-valvula-texto);
   }
 
   .botao-primario:hover:not(:disabled) {
@@ -154,7 +155,7 @@
   }
 
   .painel-dialogo::backdrop {
-    background: rgb(5 10 12 / 0.7);
+    background: rgb(5 5 7 / 0.7);
   }
 }
 

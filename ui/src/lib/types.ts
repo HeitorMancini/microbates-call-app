@@ -77,7 +77,9 @@ export interface JoinParams {
   password?: string;
 }
 
-export const DEFAULT_SERVER_URL = 'https://live.microbates.com:8443';
+/** Servidor e sala fixos: a tela de entrada pede só nome e senha. */
+export const DEFAULT_SERVER_URL = 'wss://live.microbates.com:8443';
+export const DEFAULT_ROOM = 'Call 1';
 
 export const EVENTS = {
   state: 'room://state',

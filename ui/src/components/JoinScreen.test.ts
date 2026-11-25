@@ -7,62 +7,63 @@ import JoinScreen from './JoinScreen.svelte';
 
 function setup() {
   const store = new RoomStore(createMockBackend({ latencyMs: 0, autoSpeak: false, frames: false }));
+  const join = vi.spyOn(store, 'join');
   render(JoinScreen, { store });
-  return { store, user: userEvent.setup() };
+  return { store, join, user: userEvent.setup() };
 }
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  document.documentElement.removeAttribute('style');
+});
 
 describe('JoinScreen', () => {
-  it('mostra erros acessíveis e foca o primeiro campo inválido', async () => {
-    const { store, user } = setup();
-    await user.clear(screen.getByLabelText('Servidor'));
-    await user.click(screen.getByRole('button', { name: 'Entrar na sala' }));
+  it('pede só nome e senha; servidor e sala ficam ocultos', () => {
+    setup();
+    expect(screen.getByLabelText('Nome')).toBeInTheDocument();
+    expect(screen.getByLabelText('Senha da sala')).toHaveAttribute('type', 'password');
+    expect(screen.queryByLabelText('Servidor')).toBeNull();
+    expect(screen.queryByLabelText('Sala')).toBeNull();
+  });
 
-    const server = screen.getByLabelText('Servidor');
-    expect(server).toHaveAttribute('aria-invalid', 'true');
-    expect(server).toHaveAccessibleDescription(/Informe o endereço do servidor/);
-    expect(screen.getByLabelText('Sala')).toHaveAccessibleDescription('Informe o nome da sala.');
-    expect(screen.getByLabelText('Seu nome')).toHaveAttribute('aria-invalid', 'true');
-    expect(server).toHaveFocus();
+  it('sem nome, mostra o erro e foca o campo', async () => {
+    const { store, join, user } = setup();
+    await user.click(screen.getByRole('button', { name: 'Entrar' }));
+    const nome = screen.getByLabelText('Nome');
+    expect(nome).toHaveAttribute('aria-invalid', 'true');
+    expect(nome).toHaveAccessibleDescription(/nome/i);
+    expect(nome).toHaveFocus();
+    expect(join).not.toHaveBeenCalled();
     expect(store.status).toBe('disconnected');
   });
 
-  it('revalida enquanto a pessoa corrige', async () => {
-    const { user } = setup();
-    await user.click(screen.getByRole('button', { name: 'Entrar na sala' }));
-    await user.type(screen.getByLabelText('Sala'), 'resenha');
-    expect(screen.getByLabelText('Sala')).not.toHaveAttribute('aria-invalid');
+  it('entra no servidor e na sala fixos, aplica a cor do blob e lembra nome e senha', async () => {
+    const { store, join, user } = setup();
+    await user.type(screen.getByLabelText('Nome'), 'Ana');
+    await user.type(screen.getByLabelText('Senha da sala'), 'segredo');
+    await user.click(screen.getByRole('button', { name: 'Entrar' }));
+
+    expect(join).toHaveBeenCalledWith({ serverUrl: 'wss://live.microbates.com:8443', room: 'Call 1', name: 'Ana', password: 'segredo' });
+    await vi.waitFor(() => expect(store.status).toBe('connected'));
+    expect(document.documentElement.style.getPropertyValue('--color-valvula')).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(JSON.parse(localStorage.getItem('sheeshcord:entrada')!)).toEqual({ name: 'Ana', password: 'segredo' });
   });
 
-  it('rejeita endereço sem protocolo', async () => {
-    const { user } = setup();
-    await user.clear(screen.getByLabelText('Servidor'));
-    await user.type(screen.getByLabelText('Servidor'), '26.1.2.3:7880');
-    await user.click(screen.getByRole('button', { name: 'Entrar na sala' }));
-    expect(screen.getByLabelText('Servidor')).toHaveAccessibleDescription(/https:\/\/live\.microbates\.com/);
-  });
-
-  it('usa o servidor padrão e envia a senha do grupo', async () => {
+  it('mostra o erro do servidor quando a senha está errada', async () => {
     const { store, user } = setup();
-    expect(screen.getByLabelText('Servidor')).toHaveValue('https://live.microbates.com:8443');
-    expect(screen.getByLabelText('Senha do grupo')).toHaveAttribute('type', 'password');
-    await user.type(screen.getByLabelText('Sala'), 'resenha');
-    await user.type(screen.getByLabelText('Seu nome'), 'Ana');
-    await user.type(screen.getByLabelText('Senha do grupo'), 'errada');
-    await user.click(screen.getByRole('button', { name: 'Entrar na sala' }));
+    await user.type(screen.getByLabelText('Nome'), 'Ana');
+    await user.type(screen.getByLabelText('Senha da sala'), 'errada');
+    await user.click(screen.getByRole('button', { name: 'Entrar' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/senha do grupo incorreta/);
     expect(store.status).not.toBe('connected');
   });
 
-  it('entra com dados válidos e lembra deles', async () => {
-    const { store, user } = setup();
-    await user.clear(screen.getByLabelText('Servidor'));
-    await user.type(screen.getByLabelText('Servidor'), 'ws://26.1.2.3:7880');
-    await user.type(screen.getByLabelText('Sala'), 'resenha');
-    await user.type(screen.getByLabelText('Seu nome'), 'Ana');
-    await user.click(screen.getByRole('button', { name: 'Entrar na sala' }));
-    await vi.waitFor(() => expect(store.status).toBe('connected'));
-    expect(JSON.parse(localStorage.getItem('sheeshcord:entrada')!)).toMatchObject({ room: 'resenha', name: 'Ana' });
+  it('volta para a cor neutra enquanto o nome é editado', async () => {
+    localStorage.setItem('sheeshcord:entrada', JSON.stringify({ name: 'Ana', password: '' }));
+    const { user } = setup();
+    const raiz = document.documentElement.style;
+    expect(raiz.getPropertyValue('--color-valvula')).not.toBe('#6a6a72');
+    await user.type(screen.getByLabelText('Nome'), 'x');
+    expect(raiz.getPropertyValue('--color-valvula')).toBe('#6a6a72');
   });
 });

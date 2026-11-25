@@ -1,4 +1,4 @@
-# Sheeshcord
+# μChat (microchat)
 
 App desktop (Windows) de **voz + compartilhamento de tela** para um grupo pequeno
 de amigos (~7 pessoas) jogando juntos. O servidor de mídia (LiveKit) roda numa VM
@@ -85,7 +85,7 @@ Instalador (NSIS, instalação por usuário, sem admin):
 ```powershell
 $env:CARGO_TARGET_DIR = "C:\t"   # caminho curto (veja a nota abaixo)
 pnpm tauri build --bundles nsis
-# → C:\t\release\bundle\nsis\Sheeshcord_<versão>_x64-setup.exe
+# → C:\t\release\bundle\nsis\microchat_<versão>_x64-setup.exe
 ```
 
 > O build release do libwebrtc falha com `C1083 ... constexpr_parser.h` se o diretório
@@ -95,10 +95,11 @@ pnpm tauri build --bundles nsis
 
 ## Usando
 
-1. Instale o Sheeshcord pelo instalador da [última release](https://github.com/HeitorMancini/microbates-call-app/releases)
-   (reinstalar uma versão nova atualiza a existente).
-2. Servidor: `https://live.microbates.com:8443` (já vem preenchido). Informe a **senha do grupo**,
-   a sala e seu nome.
+1. Instale o μChat pelo instalador da [última release](https://github.com/HeitorMancini/microbates-call-app/releases)
+   (reinstalar uma versão nova atualiza a existente; quem tinha o antigo "Sheeshcord" pode
+   desinstalá-lo depois — nome e senha salvos continuam).
+2. Informe seu nome e a **senha da sala**. Servidor (`wss://live.microbates.com:8443`) e sala
+   (`Call 1`) são fixos.
 3. Sem áudio/vídeo? Veja se `https://live.microbates.com:8443/health` responde `{"status":"ok"}`
    e a seção de problemas em [`deploy/README.md`](deploy/README.md).
 

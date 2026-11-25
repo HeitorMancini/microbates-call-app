@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { RoomStore } from '../lib/room.svelte';
+  import { arrastavel } from '../lib/janela';
   import type { ConnectionStatus } from '../lib/types';
   import ControlBar from './ControlBar.svelte';
   import ParticipantList from './ParticipantList.svelte';
@@ -38,7 +39,7 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="sala">
-  <header class="cabecalho">
+  <header class="cabecalho" use:arrastavel={{ maximizarComDuploClique: true }}>
     <div class="identidade">
       <h1 class="nome-sala">{store.roomName}</h1>
       <p class="servidor">{store.serverUrl}</p>
@@ -85,7 +86,8 @@
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto auto;
     gap: 1rem;
-    padding: 1.25rem clamp(1rem, 3vw, 2rem) 1.25rem;
+    /* Topo maior: os controles da janela ficam acima do cabeçalho. */
+    padding: 2.5rem clamp(1rem, 3vw, 2rem) 1.25rem;
     box-sizing: border-box;
   }
 

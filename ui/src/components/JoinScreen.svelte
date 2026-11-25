@@ -1,276 +1,322 @@
 <script lang="ts">
+  import { blobatar } from 'blobatar';
+  import { corDoBlob, destaqueDe, type Destaque } from '../lib/cor';
+  import { arrastavel } from '../lib/janela';
   import type { RoomStore } from '../lib/room.svelte';
-  import { hasErrors, MAX_FIELD_LEN, validateJoin, type JoinErrors } from '../lib/validation';
-  import { DEFAULT_SERVER_URL, type JoinParams } from '../lib/types';
+  import { aplicarDestaque } from '../lib/tema';
+  import { DEFAULT_ROOM, DEFAULT_SERVER_URL } from '../lib/types';
+  import { hasErrors, MAX_FIELD_LEN, validateJoin } from '../lib/validation';
+  import BotaoEntrar from './BotaoEntrar.svelte';
+  import FundoAscii from './FundoAscii.svelte';
   import Icon from './Icon.svelte';
+  import LogoMicro from './LogoMicro.svelte';
 
   const STORAGE_KEY = 'sheeshcord:entrada';
+  const ESPERA_MS = 500;
 
-  type Form = Required<JoinParams>;
+  let { store, saindo = false }: { store: RoomStore; saindo?: boolean } = $props();
 
-  let { store }: { store: RoomStore } = $props();
-
-  function loadSaved(): Form {
-    const empty: Form = { serverUrl: DEFAULT_SERVER_URL, room: '', name: '', password: '' };
+  function loadSaved(): { name: string; password: string } {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return { ...empty, ...JSON.parse(raw) };
+      if (raw) {
+        const { name = '', password = '' } = JSON.parse(raw);
+        return { name: String(name), password: String(password) };
+      }
     } catch {
-      // Sem armazenamento: começa com os padrões.
+      // Sem armazenamento: começa vazio.
     }
-    return empty;
+    return { name: '', password: '' };
   }
 
-  let form = $state<Form>(loadSaved());
-  let errors = $state<JoinErrors>({});
-  let submitted = $state(false);
-  let fields = $state<Partial<Record<keyof Form, HTMLInputElement>>>({});
+  function gerar(nome: string): { svg: string; destaque: Destaque } | null {
+    const limpo = nome.trim();
+    if (!limpo) return null;
+    const svg = blobatar(limpo);
+    return { svg, destaque: destaqueDe(corDoBlob(svg)) };
+  }
 
-  // Depois da primeira tentativa, revalida enquanto a pessoa corrige.
-  $effect(() => {
-    if (submitted) errors = validateJoin(form);
-  });
+  const salvo = loadSaved();
+  let name = $state(salvo.name);
+  let password = $state(salvo.password);
+  let blob = $state(gerar(salvo.name));
+  let esperando = $state(false);
+  let erroNome = $state<string | null>(null);
+  let campoNome: HTMLInputElement;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
+  const destaque = $derived(esperando ? null : (blob?.destaque ?? null));
   const busy = $derived(store.busy || store.status === 'connecting');
+
+  $effect(() => aplicarDestaque(destaque));
+  $effect(() => () => clearTimeout(timer));
+
+  function confirmarNome() {
+    clearTimeout(timer);
+    blob = gerar(name);
+    esperando = false;
+  }
+
+  function digitou() {
+    esperando = true;
+    erroNome = null;
+    clearTimeout(timer);
+    timer = setTimeout(confirmarNome, ESPERA_MS);
+  }
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
-    submitted = true;
-    errors = validateJoin(form);
+    if (busy) return;
+    confirmarNome();
+    const form = { serverUrl: DEFAULT_SERVER_URL, room: DEFAULT_ROOM, name, password };
+    const errors = validateJoin(form);
     if (hasErrors(errors)) {
-      const first = (['serverUrl', 'room', 'name'] as const).find((k) => errors[k]);
-      if (first) fields[first]?.focus();
+      erroNome = errors.name ?? null;
+      campoNome.focus();
       return;
     }
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ name, password }));
     } catch {
       // Ignora: salvar é só conveniência.
     }
     await store.join(form);
   }
-
-  const inputs: {
-    key: keyof Form;
-    label: string;
-    placeholder: string;
-    autocomplete: string;
-    type?: 'text' | 'password';
-    required?: boolean;
-    hint?: string;
-  }[] = [
-    {
-      key: 'serverUrl',
-      label: 'Servidor',
-      placeholder: DEFAULT_SERVER_URL,
-      autocomplete: 'url',
-      required: true,
-    },
-    { key: 'room', label: 'Sala', placeholder: 'resenha', autocomplete: 'off', required: true },
-    { key: 'name', label: 'Seu nome', placeholder: 'Como a turma te chama', autocomplete: 'nickname', required: true },
-    {
-      key: 'password',
-      label: 'Senha do grupo',
-      placeholder: 'Combinada com a turma',
-      autocomplete: 'current-password',
-      type: 'password',
-      hint: 'Pedida pelo servidor para barrar estranhos.',
-    },
-  ];
 </script>
 
-<main class="entrada">
-  <section class="marca" aria-labelledby="titulo-app">
-    <h1 id="titulo-app">Sheeshcord</h1>
-    <p class="lema">Voz e tela em alta qualidade para a sua turma.</p>
-    <div class="vu" aria-hidden="true">
-      {#each [0.35, 0.62, 0.48, 0.9, 0.55, 0.74, 0.3] as h, i (i)}
-        <span style="--i: {i}; --h: {h}"></span>
-      {/each}
+<main class="entrada" class:saindo use:arrastavel>
+  <FundoAscii pausado={saindo} />
+  <div class="fosco" aria-hidden="true"></div>
+
+  <form class="card" novalidate onsubmit={submit} aria-labelledby="titulo-app">
+    <h1 id="titulo-app" class="titulo">
+      <span class="sr-only">μChat</span>
+      <LogoMicro tamanho={130} />
+    </h1>
+
+    <div class="palco">
+      <div class="avatar" class:esperando aria-hidden="true">
+      {#if blob}
+        {#key blob.svg}
+          <img class="blob" alt="" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(blob.svg)}`} />
+        {/key}
+      {:else}
+        <span class="vazio"></span>
+      {/if}
+      </div>
     </div>
-  </section>
 
-  <form class="formulario" novalidate onsubmit={submit} aria-labelledby="titulo-form">
-    <h2 id="titulo-form">Entrar numa sala</h2>
-
-    {#each inputs as input (input.key)}
-      {@const error = input.key === 'password' ? undefined : errors[input.key]}
-      {@const describedBy = [error ? `${input.key}-erro` : '', input.hint ? `${input.key}-dica` : '']
-        .filter(Boolean)
-        .join(' ')}
-      <div class="grupo">
-        <label for="campo-{input.key}">{input.label}</label>
-        <input
-          bind:this={fields[input.key]}
-          id="campo-{input.key}"
-          class="campo"
-          name={input.key}
-          type={input.type ?? 'text'}
-          inputmode={input.key === 'serverUrl' ? 'url' : undefined}
-          spellcheck="false"
-          autocomplete={input.autocomplete as AutoFill}
-          placeholder={input.placeholder}
-          maxlength={input.key === 'serverUrl' || input.key === 'password' ? undefined : MAX_FIELD_LEN + 16}
-          bind:value={form[input.key]}
-          aria-invalid={error ? 'true' : undefined}
-          aria-describedby={describedBy || undefined}
-          required={input.required}
-        />
-        {#if input.hint}
-          <p class="dica" id="{input.key}-dica">{input.hint}</p>
-        {/if}
-        {#if error}
-          <p class="erro" id="{input.key}-erro">
-            <Icon name="alert" size={16} />
-            {error}
-          </p>
-        {/if}
-      </div>
-    {/each}
-
-    {#if store.error}
-      <div class="falha" role="alert">
-        <Icon name="alert" size={18} />
-        <span>Não deu para entrar: {store.error}</span>
-      </div>
+    <div class="campos">
+    <label class="sr-only" for="campo-nome">Nome</label>
+    <input
+      bind:this={campoNome}
+      id="campo-nome"
+      class="campo-entrada"
+      name="name"
+      type="text"
+      placeholder="Nome"
+      autocomplete="off"
+      spellcheck="false"
+      maxlength={MAX_FIELD_LEN + 16}
+      bind:value={name}
+      oninput={digitou}
+      aria-invalid={erroNome ? 'true' : undefined}
+      aria-describedby={erroNome ? 'nome-erro' : undefined}
+      required
+    />
+    {#if erroNome}
+      <p class="erro" id="nome-erro">
+        <Icon name="alert" size={14} />
+        {erroNome}
+      </p>
     {/if}
 
-    <button class="botao botao-primario enviar" type="submit" disabled={busy} aria-busy={busy}>
-      {busy ? 'Conectando…' : 'Entrar na sala'}
-    </button>
+    <label class="sr-only" for="campo-senha">Senha da sala</label>
+    <input
+      id="campo-senha"
+      class="campo-entrada"
+      name="password"
+      type="password"
+      placeholder="Senha da sala"
+      autocomplete="current-password"
+      bind:value={password}
+    />
+
+    {#if store.error}
+      <p class="falha" role="alert">
+        <Icon name="alert" size={16} />
+        <span>Não deu para entrar: {store.error}</span>
+      </p>
+    {/if}
+
+    <div class="acao">
+      <BotaoEntrar {destaque} ocupado={busy} rotulo={busy ? 'Conectando…' : 'Entrar'} />
+    </div>
+    </div>
   </form>
 </main>
 
 <style>
   .entrada {
-    min-height: 100%;
-    display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 420px);
-    align-items: center;
-    gap: clamp(2rem, 6vw, 6rem);
-    padding: clamp(1.5rem, 6vw, 5rem);
-    box-sizing: border-box;
-    overflow-y: auto;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: clamp(3.5rem, 10vw, 8.5rem);
-    line-height: 0.85;
-    font-weight: 800;
-    font-variation-settings: 'wdth' 75;
-    letter-spacing: -0.035em;
-  }
-
-  .lema {
-    margin: 1.25rem 0 0;
-    max-width: 28ch;
-    font-size: 1.25rem;
-    color: var(--color-nevoa);
-  }
-
-  .vu {
-    display: flex;
-    align-items: flex-end;
-    gap: 10px;
-    height: 72px;
-    margin-top: 2.5rem;
-  }
-
-  .vu span {
-    width: 14px;
+    position: relative;
     height: 100%;
-    border-radius: 4px;
-    background: var(--color-valvula);
-    transform-origin: bottom;
-    transform: scaleY(var(--h));
-    animation: subir 1400ms var(--ease-saida) calc(var(--i) * 60ms) both;
+    overflow: hidden;
+    background: #000;
   }
 
-  .vu span:nth-child(3n + 2) {
-    background: var(--color-giz);
+  .fosco {
+    position: absolute;
+    inset: 0;
+    backdrop-filter: blur(1.5px);
+    transition: opacity 380ms ease;
   }
 
-  /* Um único momento: o medidor "acende" ao abrir o app e assenta. */
-  @keyframes subir {
-    0% {
-      transform: scaleY(0.04);
+  .entrada :global(.fundo-ascii) {
+    transition: opacity 380ms ease;
+  }
+
+  /* Ao entrar na chamada: a paisagem some no preto e o card se dissolve em zoom. */
+  .saindo :global(.fundo-ascii),
+  .saindo .fosco {
+    opacity: 0;
+  }
+
+  .card {
+    position: relative;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 40px 32px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition:
+      opacity 300ms ease,
+      transform 380ms var(--ease-saida);
+  }
+
+  .saindo .card {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+
+  .titulo {
+    margin: 0;
+    line-height: 0;
+  }
+
+  /* O blob fica no espaço entre a marca e o formulário, um pouco mais perto da marca. */
+  .palco {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    min-height: 112px;
+    padding-bottom: 44px;
+  }
+
+  .avatar {
+    width: 96px;
+    height: 96px;
+    display: grid;
+    place-items: center;
+  }
+
+  .campos {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .blob {
+    display: block;
+    width: 96px;
+    height: 96px;
+    animation: brotar 350ms var(--ease-mola);
+    transition:
+      opacity 300ms,
+      filter 300ms,
+      transform 300ms;
+  }
+
+
+
+  .esperando .blob {
+    opacity: 0.3;
+    filter: grayscale(1);
+    transform: scale(0.92);
+  }
+
+  @keyframes brotar {
+    from {
+      transform: scale(0.7);
       opacity: 0;
     }
-    40% {
-      transform: scaleY(min(1, calc(var(--h) + 0.3)));
-      opacity: 1;
-    }
-    100% {
-      transform: scaleY(var(--h));
-    }
   }
 
-  .formulario {
-    display: grid;
-    gap: 1.1rem;
+  .vazio {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: 2px dashed #3a3a40;
   }
 
-  h2 {
-    margin: 0 0 0.25rem;
-    font-size: 1.5rem;
-    font-weight: 700;
+  .campo-entrada {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 14px;
+    box-sizing: border-box;
+    border-radius: 9px;
+    border: 1px solid rgb(255 255 255 / 0.12);
+    background: rgb(8 8 10 / 0.55);
+    color: var(--color-giz);
+    font-size: 15px;
+    outline: none;
+    transition:
+      border-color 300ms,
+      box-shadow 300ms;
   }
 
-  .grupo {
-    display: grid;
-    gap: 0.35rem;
+  .campo-entrada::placeholder {
+    color: #85858d;
   }
 
-  label {
-    font-weight: 600;
+  .campo-entrada:focus-visible {
+    border-color: var(--color-valvula);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-valvula) 25%, transparent);
   }
 
-  .dica {
-    margin: 0;
-    font-size: 0.875rem;
-    color: var(--color-nevoa);
+  .campo-entrada[aria-invalid='true'] {
+    border-color: var(--color-corte);
   }
 
-  .erro {
+  .erro,
+  .falha {
     display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    margin: 0;
-    font-size: 0.9rem;
+    gap: 6px;
+    align-items: flex-start;
+    align-self: stretch;
+    margin: -6px 0 0;
+    font-size: 13px;
     color: var(--color-corte);
   }
 
   .falha {
-    display: flex;
-    gap: 0.6rem;
-    align-items: flex-start;
-    padding: 0.8rem 1rem;
-    border-radius: var(--radius-botao);
-    background: var(--color-corte-fundo);
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 9px;
+    background: rgb(20 8 10 / 0.75);
     color: var(--color-giz);
   }
 
-  .falha :global(svg) {
+  .falha :global(svg),
+  .erro :global(svg) {
     flex: none;
     margin-top: 2px;
     color: var(--color-corte);
   }
 
-  .enviar {
-    margin-top: 0.5rem;
-    min-height: 52px;
-    font-size: 1.05rem;
-  }
-
-  @media (max-width: 760px) {
-    .entrada {
-      grid-template-columns: 1fr;
-      align-content: start;
-    }
-
-    .vu {
-      display: none;
-    }
+  .acao {
+    margin-top: 8px;
+    width: 100%;
   }
 </style>

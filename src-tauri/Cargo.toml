@@ -22,3 +22,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+# Mesmas versões que o wry já usa; só para desligar o autofill do WebView2.
+webview2-com = "0.39"
+windows-core = "0.62"

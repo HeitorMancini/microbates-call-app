@@ -8,23 +8,21 @@ async function expectNoA11yViolations(page: Page) {
 
 async function joinRoom(page: Page, query = '?mock=1') {
   await page.goto(`/${query}`);
-  await page.getByLabel('Servidor', { exact: true }).fill('ws://26.1.2.3:7880');
-  await page.getByLabel('Sala', { exact: true }).fill('resenha');
-  await page.getByLabel('Seu nome', { exact: true }).fill('Ana');
-  await page.getByRole('button', { name: 'Entrar na sala' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'resenha' })).toBeVisible();
+  await page.getByLabel('Nome', { exact: true }).fill('Ana');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Call 1' })).toBeVisible();
 }
 
 test('tela de entrada é acessível e valida o formulário', async ({ page }) => {
   await page.goto('/?mock=1');
-  await expect(page.getByRole('heading', { name: 'Sheeshcord' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'μChat' })).toBeVisible();
+  await expect(page.getByLabel('Servidor', { exact: true })).toHaveCount(0);
   await expectNoA11yViolations(page);
 
-  await page.getByRole('button', { name: 'Entrar na sala' }).click();
-  await expect(page.getByLabel('Servidor', { exact: true })).toHaveValue('https://live.microbates.com:8443');
-  await expect(page.getByLabel('Sala', { exact: true })).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.getByLabel('Sala', { exact: true })).toBeFocused();
-  await expect(page.getByText('Informe o nome da sala.')).toBeVisible();
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  const nome = page.getByLabel('Nome', { exact: true });
+  await expect(nome).toHaveAttribute('aria-invalid', 'true');
+  await expect(nome).toBeFocused();
   await expectNoA11yViolations(page);
 });
 
@@ -69,8 +67,8 @@ test('fluxo completo: entrar, ver participantes, mutar, compartilhar e sair', as
   await expect(page.getByRole('button', { name: 'Compartilhar tela' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Sair' }).click();
-  await expect(page.getByRole('button', { name: 'Entrar na sala' })).toBeVisible();
-  await expect(page.getByLabel('Sala', { exact: true })).toHaveValue('resenha');
+  await expect(page.getByRole('button', { name: 'Entrar' })).toBeVisible();
+  await expect(page.getByLabel('Nome', { exact: true })).toHaveValue('Ana');
 });
 
 test('visualizador mostra a tela de outra pessoa e entra em tela cheia', async ({ page }) => {

@@ -4996,6 +4996,8 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "webview2-com",
+ "windows-core",
 ]
 
 [[package]]

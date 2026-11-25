@@ -1,0 +1,54 @@
+{
+  "$comentario": "Cenas do fundo da tela de entrada. Cada abertura do app sorteia uma cena (nunca a mesma da vez anterior). Guia de todos os campos em CENAS.md, nesta pasta.",
+  "cenas": [
+    {
+      "nome": "Montanhas à noite",
+      "descricao": "Cordilheiras em camadas que deslizam devagar, estrelas piscando, lua e névoa. Quase monocromático, puxado para o azul.",
+      "variacaoMatiz": [-15, 25],
+      "camadas": [
+        { "tipo": "estrelas", "quantidade": 70, "ate": 0.55, "caracteres": ".*", "cor": "#a9b3c7", "piscar": 0.08 },
+        { "tipo": "astro", "forma": "disco", "x": [0.12, 0.75], "y": [0.08, 0.2], "raio": 2.4, "caracteres": "@o", "cor": "#d6dcea" },
+        { "tipo": "cordilheira", "base": 0.52, "relevo": 0.21, "escala": 0.06, "velocidade": 0.015, "crista": "^A", "corpo": "#:=+", "cor": ["#3e4458", "#22252f"] },
+        { "tipo": "nevoa", "y": 0.56, "caractere": "~", "cor": "#6c7486", "densidade": 0.62, "velocidade": 0.03 },
+        { "tipo": "cordilheira", "base": 0.68, "relevo": 0.19, "escala": 0.09, "velocidade": 0.03, "crista": "^A", "corpo": "#:=+", "cor": ["#545b72", "#2a2e3a"] },
+        { "tipo": "nevoa", "y": 0.72, "caractere": "~", "cor": "#7c8496", "densidade": 0.62, "velocidade": 0.04 },
+        { "tipo": "cordilheira", "base": 0.86, "relevo": 0.15, "escala": 0.14, "velocidade": 0.045, "crista": "^A", "corpo": "#:=+", "cor": ["#6f7792", "#343846"] }
+      ]
+    },
+    {
+      "nome": "Mar ao entardecer",
+      "descricao": "Céu em faixas do roxo ao laranja, sol no horizonte e ondas que correm com o reflexo do sol.",
+      "horizonte": [0.47, 0.58],
+      "variacaoMatiz": [-15, 15],
+      "camadas": [
+        { "tipo": "ceu", "ate": "horizonte", "caracteres": ".:-=", "cor": ["#3b1a9e", "#a01fb5", "#e8407c", "#ffa95a"], "velocidade": 0.01 },
+        { "tipo": "astro", "forma": "disco", "x": [0.2, 0.8], "y": "horizonte", "raio": [4, 7], "caracteres": "@O", "cor": "#ffd25a", "limite": "horizonte" },
+        { "tipo": "agua", "de": "horizonte", "caracteres": "~-._", "cor": ["#3a8ce6", "#163f96"], "velocidade": 0.12, "reflexo": "#ffb347" }
+      ]
+    },
+    {
+      "nome": "Campo com vento",
+      "descricao": "Colinas de capim que balançam com rajadas, nuvens passando e vaga-lumes acendendo. Verdes e amarelos.",
+      "variacaoMatiz": [-20, 20],
+      "camadas": [
+        { "tipo": "nuvens", "ate": 0.38, "caracteres": "-=%", "cor": "#a7b4bf", "densidade": 0.32, "velocidade": 0.02 },
+        { "tipo": "capim", "base": 0.43, "relevo": 0.17, "escala": 0.08, "velocidade": 0.18, "caracteres": "/\\|,", "cor": ["#3f7a22", "#1c360f"] },
+        { "tipo": "capim", "base": 0.58, "relevo": 0.17, "escala": 0.08, "velocidade": 0.18, "caracteres": "/\\|,", "cor": ["#4f9a2a", "#22421a"] },
+        { "tipo": "capim", "base": 0.73, "relevo": 0.17, "escala": 0.08, "velocidade": 0.18, "caracteres": "/\\|,", "cor": ["#62b838", "#2a561b"] },
+        { "tipo": "particulas", "quantidade": 16, "de": 0.42, "ate": 0.95, "caracteres": "+*", "cor": "#f5e65a", "piscar": 0.12, "deriva": 3 }
+      ]
+    },
+    {
+      "nome": "Synthwave",
+      "descricao": "Sol em listras, montanhas em silhueta e uma grade em perspectiva correndo na sua direção. Magenta e ciano, estilo anos 80.",
+      "horizonte": [0.53, 0.62],
+      "variacaoMatiz": [-20, 20],
+      "camadas": [
+        { "tipo": "estrelas", "quantidade": 45, "ate": "horizonte-0.2", "caracteres": "..", "cor": "#8fe8ff", "piscar": 0.1 },
+        { "tipo": "astro", "forma": "listrado", "x": [0.3, 0.7], "y": "horizonte-0.09", "raio": 8, "caracteres": "#", "cor": ["#ff2e9a", "#ff5a6e", "#ff9a3d"], "limite": "horizonte", "velocidade": 0.1 },
+        { "tipo": "cordilheira", "base": "horizonte", "relevo": 0.13, "escala": 0.12, "velocidade": 0, "crista": "/", "corpo": ":", "cor": ["#7a2fa8", "#2e1440"], "ate": "horizonte" },
+        { "tipo": "grade", "de": "horizonte", "linhas": "#ff3dc8", "verticais": "#22e6ff", "velocidade": 0.25 }
+      ]
+    }
+  ]
+}
