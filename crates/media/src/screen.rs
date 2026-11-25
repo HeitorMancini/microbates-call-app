@@ -167,7 +167,12 @@ mod imp {
             tokio::task::spawn_blocking(list_sources).await?
         }
 
-        async fn start(&self, source_id: &str, preset: ScreenPreset) -> Result<(), BoxError> {
+        async fn start(
+            &self,
+            source_id: &str,
+            preset: ScreenPreset,
+            _with_audio: bool,
+        ) -> Result<(), BoxError> {
             self.stop_capture();
             let flags = (self.hub.clone(), preset.fps());
             let control = match resolve(source_id)? {

@@ -50,7 +50,9 @@ pub trait Transport: Send + Sync {
     async fn connect(&self, url: &str, token: &str) -> Result<Session, BoxError>;
     async fn disconnect(&self);
     async fn set_microphone_muted(&self, muted: bool) -> Result<(), BoxError>;
-    async fn publish_screen(&self, preset: ScreenPreset) -> Result<(), BoxError>;
+    /// Publishes the screen video track, plus its audio track when `with_audio`.
+    async fn publish_screen(&self, preset: ScreenPreset, with_audio: bool)
+        -> Result<(), BoxError>;
     async fn unpublish_screen(&self) -> Result<(), BoxError>;
 }
 
@@ -69,6 +71,13 @@ pub trait AudioSource: Send + Sync {
 #[async_trait]
 pub trait ScreenSource: Send + Sync {
     async fn list_sources(&self) -> Result<Vec<ScreenSourceInfo>, BoxError>;
-    async fn start(&self, source_id: &str, preset: ScreenPreset) -> Result<(), BoxError>;
+    /// Starts capturing; with `with_audio` also the audio of the source (the app's own
+    /// audio is never captured).
+    async fn start(
+        &self,
+        source_id: &str,
+        preset: ScreenPreset,
+        with_audio: bool,
+    ) -> Result<(), BoxError>;
     async fn stop(&self);
 }

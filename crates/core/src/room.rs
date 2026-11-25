@@ -68,7 +68,7 @@ enum Command {
     Leave(Reply),
     SetMuted(bool, Reply),
     SetDeafened(bool, Reply),
-    StartScreenShare(String, ScreenPreset, Reply),
+    StartScreenShare(String, ScreenPreset, bool, Reply),
     StopScreenShare(Reply),
 }
 
@@ -96,6 +96,7 @@ impl RoomController {
             muted: false,
             deafened: false,
             sharing: None,
+            sharing_audio: false,
             params: None,
             session_events: None,
             retry: None,
@@ -141,9 +142,10 @@ impl RoomController {
         &self,
         source_id: &str,
         preset: ScreenPreset,
+        with_audio: bool,
     ) -> CoreResult<()> {
         let source_id = source_id.to_owned();
-        self.request(|reply| Command::StartScreenShare(source_id, preset, reply))
+        self.request(|reply| Command::StartScreenShare(source_id, preset, with_audio, reply))
             .await
     }
 
@@ -201,6 +203,7 @@ struct Actor {
     muted: bool,
     deafened: bool,
     sharing: Option<ScreenPreset>,
+    sharing_audio: bool,
     params: Option<JoinParams>,
     session_events: Option<mpsc::Receiver<TransportEvent>>,
     retry: Option<Retry>,
@@ -257,8 +260,8 @@ impl Actor {
                 self.deafened = deafened;
                 let _ = reply.send(self.apply_audio_state().await);
             }
-            Command::StartScreenShare(source, preset, reply) => {
-                let _ = reply.send(self.start_screen_share(&source, preset).await);
+            Command::StartScreenShare(source, preset, with_audio, reply) => {
+                let _ = reply.send(self.start_screen_share(&source, preset, with_audio).await);
             }
             Command::StopScreenShare(reply) => {
                 self.stop_screen_share().await;
@@ -463,7 +466,13 @@ impl Actor {
                 tracing::info!(attempt, "reconnected");
                 let _ = self.apply_audio_state().await;
                 if let Some(preset) = self.sharing {
-                    if let Err(e) = self.deps.transport.publish_screen(preset).await {
+                    let with_audio = self.sharing_audio;
+                    if let Err(e) = self
+                        .deps
+                        .transport
+                        .publish_screen(preset, with_audio)
+                        .await
+                    {
                         tracing::warn!(error = %e, "failed to republish screen after reconnect");
                     }
                 }
@@ -484,7 +493,12 @@ impl Actor {
         }
     }
 
-    async fn start_screen_share(&mut self, source: &str, preset: ScreenPreset) -> CoreResult<()> {
+    async fn start_screen_share(
+        &mut self,
+        source: &str,
+        preset: ScreenPreset,
+        with_audio: bool,
+    ) -> CoreResult<()> {
         if self.state.status != RoomStatus::Connected {
             return Err(CoreError::NotConnected);
         }
@@ -493,14 +507,20 @@ impl Actor {
         }
         self.deps
             .screen
-            .start(source, preset)
+            .start(source, preset, with_audio)
             .await
             .map_err(CoreError::screen)?;
-        if let Err(e) = self.deps.transport.publish_screen(preset).await {
+        if let Err(e) = self
+            .deps
+            .transport
+            .publish_screen(preset, with_audio)
+            .await
+        {
             self.deps.screen.stop().await;
             return Err(CoreError::transport(e));
         }
         self.sharing = Some(preset);
+        self.sharing_audio = with_audio;
         self.set_local_sharing(true);
         Ok(())
     }

@@ -372,7 +372,7 @@ async fn leave_disconnects_everything() {
     let mut h = harness();
     h.room.join(params()).await.unwrap();
     h.room
-        .start_screen_share("monitor-0", ScreenPreset::P1080Fps60)
+        .start_screen_share("monitor-0", ScreenPreset::P1080Fps60, true)
         .await
         .unwrap();
 
@@ -392,10 +392,30 @@ async fn screen_share_requires_connection() {
     let h = harness();
     let err = h
         .room
-        .start_screen_share("monitor-0", ScreenPreset::P720Fps30)
+        .start_screen_share("monitor-0", ScreenPreset::P720Fps30, true)
         .await
         .unwrap_err();
     assert_eq!(err, CoreError::NotConnected);
+}
+
+#[tokio::test]
+async fn screen_share_forwards_audio_flag() {
+    let h = harness();
+    h.room.join(params()).await.unwrap();
+
+    h.room
+        .start_screen_share("monitor-0", ScreenPreset::P720Fps30, false)
+        .await
+        .unwrap();
+    assert!(!h.screen.active_audio());
+    assert!(!h.transport.published_screen_audio());
+
+    h.room
+        .start_screen_share("monitor-0", ScreenPreset::P720Fps30, true)
+        .await
+        .unwrap();
+    assert!(h.screen.active_audio());
+    assert!(h.transport.published_screen_audio());
 }
 
 #[tokio::test]
@@ -405,7 +425,7 @@ async fn screen_share_start_and_stop() {
 
     let sources = h.room.list_screen_sources().await.unwrap();
     h.room
-        .start_screen_share(&sources[1].id, ScreenPreset::P1080Fps30)
+        .start_screen_share(&sources[1].id, ScreenPreset::P1080Fps30, true)
         .await
         .unwrap();
     assert_eq!(
@@ -430,7 +450,7 @@ async fn invalid_screen_source_is_reported() {
     h.room.join(params()).await.unwrap();
     let err = h
         .room
-        .start_screen_share("nope", ScreenPreset::P720Fps30)
+        .start_screen_share("nope", ScreenPreset::P720Fps30, true)
         .await
         .unwrap_err();
     assert!(matches!(err, CoreError::Screen(_)));

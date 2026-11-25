@@ -113,12 +113,12 @@ async fn two_clients_exchange_tone_and_test_pattern() {
     bob.audio.start().await.unwrap();
     alice
         .screen
-        .start(FAKE_MONITOR_ID, ScreenPreset::P720Fps30)
+        .start(FAKE_MONITOR_ID, ScreenPreset::P720Fps30, false)
         .await
         .unwrap();
     alice
         .transport
-        .publish_screen(ScreenPreset::P720Fps30)
+        .publish_screen(ScreenPreset::P720Fps30, false)
         .await
         .unwrap();
 
@@ -204,12 +204,12 @@ async fn screen_share_uses_gpu_encoder_when_available() {
 
     alice
         .screen
-        .start(FAKE_MONITOR_ID, ScreenPreset::P720Fps30)
+        .start(FAKE_MONITOR_ID, ScreenPreset::P720Fps30, false)
         .await
         .unwrap();
     alice
         .transport
-        .publish_screen(ScreenPreset::P720Fps30)
+        .publish_screen(ScreenPreset::P720Fps30, false)
         .await
         .unwrap();
     let bob_hub = bob.hub.clone();
@@ -257,12 +257,12 @@ async fn screen_share_sustains_1080p60_on_gpu() {
 
     alice
         .screen
-        .start(FAKE_MONITOR_ID, ScreenPreset::P1080Fps60)
+        .start(FAKE_MONITOR_ID, ScreenPreset::P1080Fps60, false)
         .await
         .unwrap();
     alice
         .transport
-        .publish_screen(ScreenPreset::P1080Fps60)
+        .publish_screen(ScreenPreset::P1080Fps60, false)
         .await
         .unwrap();
     let info = alice
@@ -314,12 +314,12 @@ async fn hardware_failure_falls_back_to_software() {
 
     alice
         .screen
-        .start(FAKE_MONITOR_ID, ScreenPreset::P720Fps30)
+        .start(FAKE_MONITOR_ID, ScreenPreset::P720Fps30, false)
         .await
         .unwrap();
     alice
         .transport
-        .publish_screen(ScreenPreset::P720Fps30)
+        .publish_screen(ScreenPreset::P720Fps30, false)
         .await
         .unwrap();
     let info = alice

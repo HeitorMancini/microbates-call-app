@@ -151,8 +151,9 @@ async fn start_screen_share(
     svc: State<'_, RoomService>,
     source_id: String,
     preset: ScreenPreset,
+    with_audio: bool,
 ) -> Result<(), RoomError> {
-    svc.start_screen_share(&source_id, preset).await
+    svc.start_screen_share(&source_id, preset, with_audio).await
 }
 
 #[tauri::command]

@@ -65,6 +65,7 @@ struct TransportState {
     sender: Option<mpsc::Sender<TransportEvent>>,
     mic_muted: Option<bool>,
     screen: Option<ScreenPreset>,
+    screen_audio: bool,
 }
 
 #[derive(Debug, Default)]
@@ -127,6 +128,10 @@ impl MockTransport {
         lock(&self.state).screen
     }
 
+    pub fn published_screen_audio(&self) -> bool {
+        lock(&self.state).screen_audio
+    }
+
     pub fn is_connected(&self) -> bool {
         lock(&self.state).sender.is_some()
     }
@@ -163,13 +168,21 @@ impl Transport for MockTransport {
         Ok(())
     }
 
-    async fn publish_screen(&self, preset: ScreenPreset) -> Result<(), BoxError> {
-        lock(&self.state).screen = Some(preset);
+    async fn publish_screen(
+        &self,
+        preset: ScreenPreset,
+        with_audio: bool,
+    ) -> Result<(), BoxError> {
+        let mut state = lock(&self.state);
+        state.screen = Some(preset);
+        state.screen_audio = with_audio;
         Ok(())
     }
 
     async fn unpublish_screen(&self) -> Result<(), BoxError> {
-        lock(&self.state).screen = None;
+        let mut state = lock(&self.state);
+        state.screen = None;
+        state.screen_audio = false;
         Ok(())
     }
 }
@@ -256,11 +269,16 @@ impl AudioSource for MockAudio {
 #[derive(Debug, Default)]
 pub struct MockScreen {
     active: Mutex<Option<(String, ScreenPreset)>>,
+    audio: Mutex<bool>,
 }
 
 impl MockScreen {
     pub fn active(&self) -> Option<(String, ScreenPreset)> {
         lock(&self.active).clone()
+    }
+
+    pub fn active_audio(&self) -> bool {
+        *lock(&self.audio)
     }
 }
 
@@ -281,16 +299,23 @@ impl ScreenSource for MockScreen {
         ])
     }
 
-    async fn start(&self, source_id: &str, preset: ScreenPreset) -> Result<(), BoxError> {
+    async fn start(
+        &self,
+        source_id: &str,
+        preset: ScreenPreset,
+        with_audio: bool,
+    ) -> Result<(), BoxError> {
         let sources = self.list_sources().await?;
         if !sources.iter().any(|s| s.id == source_id) {
             return Err(format!("unknown source {source_id}").into());
         }
         *lock(&self.active) = Some((source_id.to_owned(), preset));
+        *lock(&self.audio) = with_audio;
         Ok(())
     }
 
     async fn stop(&self) {
         *lock(&self.active) = None;
+        *lock(&self.audio) = false;
     }
 }

@@ -242,16 +242,17 @@ impl RoomService {
         &self,
         source_id: &str,
         preset: ScreenPreset,
+        with_audio: bool,
     ) -> Result<(), RoomError> {
         self.ensure_connected()?;
         let sources = self.list_screen_sources().await?;
         if !sources.iter().any(|s| s.id == source_id) {
             return Err(RoomError::UnknownScreenSource(source_id.to_owned()));
         }
-        tracing::info!(source_id, ?preset, "iniciando compartilhamento de tela");
+        tracing::info!(source_id, ?preset, with_audio, "iniciando compartilhamento de tela");
         Ok(self
             .controller
-            .start_screen_share(source_id, preset)
+            .start_screen_share(source_id, preset, with_audio)
             .await?)
     }
 
@@ -558,7 +559,7 @@ mod tests {
             svc, rec, screen, ..
         } = joined().await;
         let source = svc.list_screen_sources().await.unwrap()[0].id.clone();
-        svc.start_screen_share(&source, ScreenPreset::P1080Fps60)
+        svc.start_screen_share(&source, ScreenPreset::P1080Fps60, true)
             .await
             .unwrap();
         assert!(rec.last_local().await.sharing_screen);
@@ -576,14 +577,14 @@ mod tests {
         let source = f.svc.list_screen_sources().await.unwrap()[0].id.clone();
         assert_eq!(
             f.svc
-                .start_screen_share(&source, ScreenPreset::P720Fps30)
+                .start_screen_share(&source, ScreenPreset::P720Fps30, true)
                 .await,
             Err(RoomError::NotConnected)
         );
         let f = joined().await;
         assert_eq!(
             f.svc
-                .start_screen_share("nope", ScreenPreset::P720Fps30)
+                .start_screen_share("nope", ScreenPreset::P720Fps30, true)
                 .await,
             Err(RoomError::UnknownScreenSource("nope".into()))
         );

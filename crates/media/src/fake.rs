@@ -258,7 +258,12 @@ impl ScreenSource for FakeScreen {
         ])
     }
 
-    async fn start(&self, source_id: &str, preset: ScreenPreset) -> Result<(), BoxError> {
+    async fn start(
+        &self,
+        source_id: &str,
+        preset: ScreenPreset,
+        _with_audio: bool,
+    ) -> Result<(), BoxError> {
         if source_id != FAKE_MONITOR_ID && source_id != FAKE_WINDOW_ID {
             return Err(format!("unknown source {source_id}").into());
         }

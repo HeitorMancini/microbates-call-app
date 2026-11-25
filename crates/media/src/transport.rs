@@ -469,7 +469,11 @@ impl Transport for LiveKitTransport {
         Ok(())
     }
 
-    async fn publish_screen(&self, preset: ScreenPreset) -> Result<(), BoxError> {
+    async fn publish_screen(
+        &self,
+        preset: ScreenPreset,
+        _with_audio: bool,
+    ) -> Result<(), BoxError> {
         let mut guard = self.active.lock().await;
         let active = guard.as_mut().ok_or("not connected")?;
         if let Some(screen) = active.screen.take() {
