@@ -32,10 +32,26 @@ describe('RoomScreen', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Call 1' })).toBeInTheDocument();
   });
 
+  it('tem os marcos main (palco) e footer (controles)', async () => {
+    await setup();
+    expect(screen.getByRole('main', { name: 'Sala Call 1' })).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+  });
+
   it('Configurações abre Dispositivos de áudio', async () => {
     const { user } = await setup();
     await user.click(screen.getByRole('button', { name: 'Configurações' }));
     expect(await screen.findByRole('dialog', { name: 'Dispositivos de áudio' })).toBeVisible();
+  });
+
+  it('Configurações → seleciona dispositivo de saída', async () => {
+    const { store, user } = await setup();
+    await user.click(screen.getByRole('button', { name: 'Configurações' }));
+    await screen.findByRole('dialog', { name: 'Dispositivos de áudio' });
+    const output = await screen.findByRole('combobox', { name: 'Saída de áudio' });
+    await screen.findByRole('option', { name: 'Headset' });
+    await user.selectOptions(output, 'headset');
+    expect(store.selectedOutput).toBe('headset');
   });
 
   it('Sair da call desconecta', async () => {

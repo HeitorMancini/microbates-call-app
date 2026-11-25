@@ -20,7 +20,7 @@
 
   function escolher(sala: string) {
     onescolher(sala);
-    fechar(false);
+    fechar(true);
   }
 
   function aoClicarFora(e: MouseEvent) {
@@ -42,10 +42,14 @@
     type="button"
     class="botao-sala"
     bind:this={botao}
-    disabled={ocupado}
+    aria-disabled={ocupado}
     aria-haspopup="menu"
     aria-expanded={aberto}
-    onclick={() => (aberto ? fechar(false) : abrir())}
+    onclick={() => {
+      if (ocupado) return;
+      if (aberto) fechar(false);
+      else abrir();
+    }}
   >
     <span>{atual}</span>
     <Icon name="chevron-down" size={22} />
@@ -86,7 +90,7 @@
     text-transform: uppercase;
   }
 
-  .botao-sala:disabled {
+  .botao-sala[aria-disabled='true'] {
     opacity: 0.6;
     cursor: default;
   }

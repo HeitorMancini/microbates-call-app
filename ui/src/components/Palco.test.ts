@@ -78,6 +78,24 @@ describe('Palco', () => {
     expect(tela).not.toHaveClass('pequena');
   });
 
+  it('roda → "Ampliar tela" alcançável por teclado volta ao palco', async () => {
+    const user = userEvent.setup();
+    render(Palco, {
+      participants: [p({ name: 'Ana', isLocal: true }), p({ name: 'Bia', sharingScreen: true }), p({ name: 'Caio' })],
+      backend,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Roda' }));
+    const tela = screen.getByTestId('palco-tela');
+    expect(tela).toHaveClass('pequena');
+
+    const ampliar = screen.getByRole('button', { name: 'Ampliar tela' });
+    ampliar.focus();
+    await user.keyboard('{Enter}');
+    expect(tela).not.toHaveClass('pequena');
+    expect(screen.queryByRole('button', { name: 'Ampliar tela' })).toBeNull();
+  });
+
   it('clicar no AO VIVO troca a tela assistida', async () => {
     const user = userEvent.setup();
     render(Palco, {
@@ -95,7 +113,6 @@ describe('Palco', () => {
   });
 
   it('quem você assiste para → cai para quem ainda compartilha; último para → roda sem tela; novo compartilhamento abre no palco', async () => {
-    const user = userEvent.setup();
     const { rerender } = render(Palco, {
       participants: [
         p({ name: 'Ana', isLocal: true }),
@@ -106,19 +123,27 @@ describe('Palco', () => {
       backend,
     });
 
-    await user.click(screen.getByRole('button', { name: 'AO VIVO — assistir a tela de Caio' }));
-    expect(screen.getByRole('heading', { name: 'Tela de Caio' })).toBeInTheDocument();
+    // Assiste a quem compartilha por padrão (primeiro da lista, Bia); evita
+    // clicar em AO VIVO aqui, que por si só já reabre a sessão de vídeo ao
+    // trocar de pessoa assistida (comportamento à parte deste achado).
+    expect(screen.getByRole('heading', { name: 'Tela de Bia' })).toBeInTheDocument();
+    const videoAntes = screen.getByTestId('screen-video');
 
     await rerender({
       participants: [
         p({ name: 'Ana', isLocal: true }),
-        p({ name: 'Bia', sharingScreen: true }),
-        p({ name: 'Caio' }),
+        p({ name: 'Bia' }),
+        p({ name: 'Caio', sharingScreen: true }),
         p({ name: 'Gui' }),
       ],
       backend,
     });
-    expect(screen.getByRole('heading', { name: 'Tela de Bia' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tela de Caio' })).toBeInTheDocument();
+    // `sharer` não pode passar por `null` quando a pessoa assistida (Bia) para
+    // de compartilhar: se passasse, o ScreenViewer seria desmontado e
+    // remontado (o <video> seria recriado), reabrindo o vídeo mesmo sem o
+    // usuário ter trocado de tela.
+    expect(screen.getByTestId('screen-video')).toBe(videoAntes);
 
     await rerender({
       participants: [p({ name: 'Ana', isLocal: true }), p({ name: 'Bia' }), p({ name: 'Caio' }), p({ name: 'Gui' })],

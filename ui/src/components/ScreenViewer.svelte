@@ -3,8 +3,19 @@
   import type { Backend, Participant, VideoSession, VideoStats, VideoStatus } from '../lib/types';
   import Icon from './Icon.svelte';
 
-  let { backend, sharer, pequena, onroda }: { backend: Backend; sharer: Participant; pequena: boolean; onroda: () => void } =
-    $props();
+  let {
+    backend,
+    sharer,
+    pequena,
+    onroda,
+    onampliar,
+  }: {
+    backend: Backend;
+    sharer: Participant;
+    pequena: boolean;
+    onroda: () => void;
+    onampliar?: () => void;
+  } = $props();
 
   // Só o id: `sharer` é recriado a cada fala/mute e não pode religar o vídeo.
   const sharerId = $derived(sharer.id);
@@ -71,6 +82,8 @@
   }
 
   function onKey(e: KeyboardEvent) {
+    // Pequena (roda): sem tela cheia por teclado/duplo-clique, só "Ampliar tela".
+    if (pequena) return;
     if (e.key === 'f' || e.key === 'F') {
       e.preventDefault();
       void toggleFullscreen();
@@ -89,11 +102,11 @@
     class:cheia={fullscreen}
     class:pequena
     bind:this={frame}
-    tabindex="0"
+    tabindex={pequena ? -1 : 0}
     role="region"
-    aria-label="Transmissão de tela. Tecle F para tela cheia."
+    aria-label={pequena ? 'Transmissão de tela' : 'Transmissão de tela. Tecle F para tela cheia.'}
     onkeydown={onKey}
-    ondblclick={toggleFullscreen}
+    ondblclick={pequena ? undefined : toggleFullscreen}
   >
     <video
       bind:this={video}
@@ -135,6 +148,13 @@
           <Icon name={fullscreen ? 'shrink' : 'expand'} size={20} />
         </button>
       </div>
+    {:else}
+      <!-- Pequena (roda): clicar na tela já amplia (ver Palco), mas teclado e
+           leitor de tela precisam de um botão de verdade para a mesma ação. -->
+      <button type="button" class="botao ampliar" onclick={() => onampliar?.()}>
+        <Icon name="expand" size={16} />
+        Ampliar tela
+      </button>
     {/if}
   </div>
 </section>
@@ -197,6 +217,31 @@
     top: 0.75rem;
     right: 0.75rem;
     background: rgb(15 26 30 / 0.85);
+  }
+
+  /* Cobre a moldura inteira: clique em qualquer ponto da tela pequena amplia
+     (igual ao clique no div do Palco), e fica alcançável por teclado/leitor
+     de tela como um botão de verdade, não só o clique do mouse. */
+  .ampliar {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    gap: 0.2rem;
+    border: none;
+    background: transparent;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
+    opacity: 0;
+    transition: opacity 160ms ease;
+  }
+
+  .moldura:hover .ampliar,
+  .moldura:focus-within .ampliar {
+    opacity: 1;
+    background: rgb(7 16 19 / 0.35);
   }
 
   .controles {

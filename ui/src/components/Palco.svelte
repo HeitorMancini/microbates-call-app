@@ -63,7 +63,11 @@
 
   const pequena = $derived(modo === 'roda');
   const layout = $derived(posicoes(ordem, { modo, temTela, largura, altura }));
-  const sharer = $derived(compartilhando.find((p) => p.id === assistindo) ?? null);
+  // Cai para o próximo que ainda compartilha em vez de passar por `null`
+  // enquanto o efeito acima ainda não escolheu `assistindo`: sem isso o
+  // ScreenViewer desmontava e remontava por um instante (vídeo reabria) toda
+  // vez que a pessoa assistida parava de compartilhar.
+  const sharer = $derived(compartilhando.find((p) => p.id === assistindo) ?? compartilhando[0] ?? null);
 
   // Um envelope de voz compartilhado por todos os blobs do palco.
   const envelope = criarEnvelope();
@@ -81,6 +85,14 @@
 
   function aoClicarNaTela(e: MouseEvent) {
     if (pequena && !(e.target as Element).closest('button')) modo = 'palco';
+  }
+
+  function voltarParaRoda() {
+    modo = 'roda';
+  }
+
+  function voltarParaPalco() {
+    modo = 'palco';
   }
 </script>
 
@@ -114,7 +126,7 @@
       style="left: {layout.tela.x}px; top: {layout.tela.y}px; width: {layout.tela.w}px; height: {layout.tela.h}px"
       onclick={aoClicarNaTela}
     >
-      <ScreenViewer {backend} {sharer} {pequena} onroda={() => (modo = 'roda')} />
+      <ScreenViewer {backend} {sharer} {pequena} onroda={voltarParaRoda} onampliar={voltarParaPalco} />
     </div>
   {/if}
 </div>

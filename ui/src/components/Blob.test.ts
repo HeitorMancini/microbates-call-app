@@ -65,6 +65,24 @@ describe('Blob', () => {
     expect(onassistir).toHaveBeenCalled();
   });
 
+  it('o alvo de clique de quem compartilha é o blob inteiro, não só o selo', async () => {
+    const user = userEvent.setup();
+    const onassistir = vi.fn();
+    render(Blob, {
+      participant: p({ name: 'Caio', sharingScreen: true }),
+      pequeno: false,
+      assistindo: false,
+      onassistir,
+      nivel,
+    });
+    const item = screen.getByTestId('participante');
+    const img = item.querySelector('img.imagem')!;
+    const botao = screen.getByRole('button', { name: 'AO VIVO — assistir a tela de Caio' });
+    expect(botao.contains(img)).toBe(true);
+    await user.click(img);
+    expect(onassistir).toHaveBeenCalled();
+  });
+
   it('sem compartilhar não há AO VIVO', () => {
     render(Blob, { participant: p({ name: 'Bia' }), pequeno: false, assistindo: false, nivel });
     expect(screen.queryByRole('button')).toBeNull();
@@ -91,6 +109,40 @@ describe('Blob', () => {
     const atualizar = vi.mocked(montarBrilho).mock.results[0].value.atualizar;
     expect(atualizar).toHaveBeenCalledWith(true, expect.arrayContaining([expect.any(String)]));
     expect(atualizar.mock.calls[0][1]).toHaveLength(4);
+  });
+
+  it('desmontar com o import do brilho pendente não monta o brilho depois', async () => {
+    const { montarBrilho } = await import('../lib/brilho');
+    const result = render(Blob, {
+      participant: p({ name: 'Ana', speaking: true }),
+      pequeno: false,
+      assistindo: false,
+      nivel,
+    });
+    // Desmonta antes do import() (microtask) resolver: `destruido` precisa
+    // impedir o montarBrilho tardio de rodar num host já removido do DOM.
+    result.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(montarBrilho).not.toHaveBeenCalled();
+  });
+
+  it('uma atualização de participants com o import pendente não cancela o brilho', async () => {
+    const { montarBrilho } = await import('../lib/brilho');
+    const result = render(Blob, {
+      participant: p({ name: 'Ana', speaking: true }),
+      pequeno: false,
+      assistindo: false,
+      nivel,
+    });
+    // Novo objeto de participant (como chega a cada evento do backend) antes do
+    // import() resolver: antes só isso já derrubava a flag `vivo` do closure.
+    await result.rerender({
+      participant: p({ name: 'Ana', speaking: true }),
+      pequeno: false,
+      assistindo: false,
+      nivel,
+    });
+    await vi.waitFor(() => expect(montarBrilho).toHaveBeenCalledTimes(1));
   });
 
   it('mic desligado mostra selo', () => {

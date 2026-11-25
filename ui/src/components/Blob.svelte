@@ -41,27 +41,31 @@
   let hostBrilho: HTMLSpanElement;
   let brilho = $state<Brilho | null>(null);
   let carregandoBrilho = false;
+  // Flag no nível do componente (não por execução do effect): cada evento de
+  // participants chega como objeto novo e reexecuta o effect abaixo mesmo sem
+  // destruir o Blob, então uma `vivo` presa no closure do effect cancelava o
+  // import pendente nessas atualizações e o blob perdia o brilho para sempre.
+  let destruido = false;
 
   // Só carrega o voice-glow (fora do pacote inicial) na primeira fala; sem
   // movimento reduzido não carrega nunca (contorno estático no lugar).
   $effect(() => {
     if (reduzMovimento || !participant.speaking || carregandoBrilho) return;
     carregandoBrilho = true;
-    let vivo = true;
     void import('../lib/brilho').then(({ montarBrilho }) => {
-      if (!vivo) return;
+      if (destruido) return;
       brilho = montarBrilho(hostBrilho, { nivel });
     });
-    return () => {
-      vivo = false;
-    };
   });
 
   $effect(() => {
     brilho?.atualizar(participant.speaking, cores);
   });
 
-  onDestroy(() => brilho?.destruir());
+  onDestroy(() => {
+    destruido = true;
+    brilho?.destruir();
+  });
 </script>
 
 <li
@@ -74,7 +78,23 @@
   data-pequeno={pequeno}
   style={estilo}
 >
+  {#snippet avatarVisual()}
+    <div class="avatar" aria-hidden="true">
+      <span
+        class="brilho"
+        class:estatico={reduzMovimento}
+        style:--cor-contorno={destaque.cor}
+        bind:this={hostBrilho}
+      ></span>
+      <img class="imagem" alt="" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} />
+      {#if participant.muted}
+        <span class="selo selo-mudo"><Icon name="mic-off" size={pequeno ? 10 : 14} /></span>
+      {/if}
+    </div>
+  {/snippet}
   {#if participant.sharingScreen}
+    <!-- O botão envolve o blob inteiro (não só o selo) para o alvo de clique
+         cobrir o avatar pequeno na roda; nada interativo fica aninhado dentro. -->
     <button
       type="button"
       class="aovivo"
@@ -82,21 +102,12 @@
       aria-pressed={assistindo}
       onclick={() => onassistir?.()}
     >
-      AO VIVO
+      <span class="selo-ao-vivo" aria-hidden="true">AO VIVO</span>
+      {@render avatarVisual()}
     </button>
+  {:else}
+    {@render avatarVisual()}
   {/if}
-  <div class="avatar" aria-hidden="true">
-    <span
-      class="brilho"
-      class:estatico={reduzMovimento}
-      style:--cor-contorno={destaque.cor}
-      bind:this={hostBrilho}
-    ></span>
-    <img class="imagem" alt="" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} />
-    {#if participant.muted}
-      <span class="selo selo-mudo"><Icon name="mic-off" size={pequeno ? 10 : 14} /></span>
-    {/if}
-  </div>
   <span class="nome">
     {participant.name}{#if participant.isLocal}<span class="voce" aria-hidden="true">(você)</span>{/if}{#if description}<span
         class="sr-only">: {description}</span
@@ -201,13 +212,24 @@
   }
 
   .aovivo {
+    /* Alvo de clique é o blob inteiro: o botão vira o próprio item do grid
+       (mesma caixa do .avatar), não só o selo sobreposto. */
+    position: relative;
+    display: grid;
+    place-items: center;
+    border: none;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  .selo-ao-vivo {
     position: absolute;
     top: -9px;
     left: 50%;
     z-index: 3;
     transform: translateX(-50%);
     padding: 2px 8px;
-    border: none;
     border-radius: 999px;
     /* Mais escuro que o vermelho de destaque (#ff2e4d) para o texto branco em
        9px/7px bater 4.5:1 de contraste (WCAG AA). */
@@ -217,10 +239,10 @@
     font-weight: 800;
     letter-spacing: 0.04em;
     white-space: nowrap;
-    cursor: pointer;
+    pointer-events: none;
   }
 
-  .pequeno .aovivo {
+  .pequeno .selo-ao-vivo {
     top: -6px;
     padding: 3px 4px;
     font-size: 7px;

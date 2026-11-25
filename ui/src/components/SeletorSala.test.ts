@@ -18,14 +18,16 @@ describe('SeletorSala', () => {
     expect(screen.getByRole('menuitemradio', { name: 'Call 3' })).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('escolher chama onescolher e fecha', async () => {
+  it('escolher chama onescolher, fecha e devolve o foco ao botão', async () => {
     const user = userEvent.setup();
     const onescolher = vi.fn();
     render(SeletorSala, { atual: 'Call 1', ocupado: false, onescolher });
-    await user.click(screen.getByRole('button', { name: 'Call 1' }));
+    const botao = screen.getByRole('button', { name: 'Call 1' });
+    await user.click(botao);
     await user.click(screen.getByRole('menuitemradio', { name: 'Call 2' }));
     expect(onescolher).toHaveBeenCalledWith('Call 2');
     expect(screen.queryByRole('menu')).toBeNull();
+    expect(botao).toHaveFocus();
   });
 
   it('Escape fecha e devolve o foco ao botão', async () => {
@@ -39,8 +41,16 @@ describe('SeletorSala', () => {
     expect(botao).toHaveFocus();
   });
 
-  it('ocupado desabilita o botão', () => {
-    render(SeletorSala, { atual: 'Call 1', ocupado: true, onescolher: () => {} });
-    expect(screen.getByRole('button', { name: 'Call 1' })).toBeDisabled();
+  it('ocupado marca aria-disabled e ignora clique/teclado em vez de usar disabled (que tiraria o foco)', async () => {
+    const user = userEvent.setup();
+    const onescolher = vi.fn();
+    render(SeletorSala, { atual: 'Call 1', ocupado: true, onescolher });
+    const botao = screen.getByRole('button', { name: 'Call 1' });
+    expect(botao).not.toBeDisabled();
+    expect(botao).toHaveAttribute('aria-disabled', 'true');
+
+    await user.click(botao);
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(onescolher).not.toHaveBeenCalled();
   });
 });

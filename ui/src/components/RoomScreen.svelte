@@ -37,7 +37,9 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="sala">
-  <Palco participants={store.participants} backend={store.backend} />
+  <main class="area-palco" aria-label="Sala {store.roomName}">
+    <Palco participants={store.participants} backend={store.backend} />
+  </main>
 
   <header class="barra" use:arrastavel={{ maximizarComDuploClique: true }}>
     <span class="marca"><b>μ</b>Chat</span>
@@ -67,7 +69,7 @@
     </div>
   {/if}
 
-  <div class="rodape">
+  <footer class="rodape">
     <ControlBar {store} />
     <button
       type="button"
@@ -78,7 +80,7 @@
     >
       <Icon name="chat" size={34} />
     </button>
-  </div>
+  </footer>
 
   <div class="sr-only" aria-live="polite" aria-atomic="true">{store.announcement}</div>
 </div>
@@ -91,6 +93,11 @@
   .sala {
     position: relative;
     height: 100%;
+  }
+
+  .area-palco {
+    position: absolute;
+    inset: 0;
   }
 
   .barra {
@@ -133,6 +140,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    /* Em modo palco os blobs pequenos (y≈37–108) ficam sob esta faixa; só os
+       controles de verdade (filhos diretos) devem capturar clique. */
+    pointer-events: none;
+  }
+
+  .topo > :global(*) {
+    pointer-events: auto;
   }
 
   .nome-sala {
@@ -194,6 +208,12 @@
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
+    /* Mesma lógica do .topo: não cobrir blobs/tela do palco por baixo. */
+    pointer-events: none;
+  }
+
+  .rodape > :global(*) {
+    pointer-events: auto;
   }
 
   .chat {

@@ -103,6 +103,47 @@ test('respeita prefers-reduced-motion', async ({ page }) => {
   await joinRoom(page);
   const brilho = page.locator('[data-testid="participante"] .brilho').first();
   await expect(brilho.locator('canvas')).toHaveCount(0);
-  const duration = await brilho.evaluate((el) => parseFloat(getComputedStyle(el).transitionDuration));
+  // `.brilho` não tem transição própria; quem anima a posição na roda é o
+  // <li class="blob"> (transform, 650ms normalmente) — é ele que precisa
+  // respeitar `prefers-reduced-motion`, não o elemento do glow.
+  const blob = page.locator('li.blob').first();
+  const duration = await blob.evaluate((el) => parseFloat(getComputedStyle(el).transitionDuration));
   expect(duration).toBeLessThan(0.01);
+});
+
+test('clicar no avatar de quem compartilha no palco troca a tela assistida', async ({ page }) => {
+  // Dois compartilhando ao mesmo tempo: Bia Rocha (remota, desde a entrada)
+  // e o local (Ana), que passa a compartilhar depois. `assistindo` só troca
+  // quando a pessoa assistida sai da lista, então o palco continua mostrando
+  // Bia Rocha — Ana aparece como o blob pequeno com AO VIVO ao lado dela.
+  await joinRoom(page, '?mock=1&remoteShare=1');
+  await expect(page.getByRole('heading', { name: 'Tela de Bia Rocha' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Compartilhar tela' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Compartilhar tela' });
+  await dialog.getByRole('button', { name: 'Compartilhar tela' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Tela de Bia Rocha' })).toBeVisible();
+
+  const blobAna = page.locator('[data-testid="participante"]', { hasText: 'Ana' });
+  await expect(blobAna).toBeVisible();
+  // Clica na imagem do avatar (não no selo "AO VIVO"): o alvo de clique
+  // precisa cobrir o blob inteiro, não só o selinho de 7px.
+  await blobAna.locator('.imagem').click();
+  await expect(page.getByRole('heading', { name: 'Sua tela' })).toBeVisible();
+});
+
+test('roda → Ampliar tela por teclado volta ao palco', async ({ page }) => {
+  await joinRoom(page, '?mock=1&remoteShare=1');
+  await expect(page.getByRole('heading', { name: 'Tela de Bia Rocha' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Roda' }).click();
+  const ampliar = page.getByRole('button', { name: 'Ampliar tela' });
+  await expect(ampliar).toBeVisible();
+  await ampliar.focus();
+  await page.keyboard.press('Enter');
+
+  await expect(ampliar).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Roda' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Tela de Bia Rocha' })).toBeVisible();
 });
