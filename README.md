@@ -1,21 +1,23 @@
 # μChat (microchat)
 
 App desktop (Windows) de **voz + compartilhamento de tela** para um grupo pequeno
-de amigos (~7 pessoas) jogando juntos. O servidor de mídia (LiveKit) roda numa VM
-gratuita da **Oracle Cloud** em `https://live.microbates.com`, protegido por uma
-**senha do grupo**.
+de amigos (~7 pessoas) jogando juntos. O servidor de mídia (LiveKit) roda num
+**home lab Ubuntu** (Docker Compose), exposto em `https://live.microbates.com:8443`, protegido por uma **senha do grupo**.
 
 ## Visão geral
 
-- Entrar numa sala com um nome, ver quem está nela, quem está falando, mutar/ensurdecer.
+- Entrar com um nome e escolher entre as salas **Call 1, Call 2 e Call 3** (trocar de sala não passa pelo login).
+- Ver quem está na sala numa **roda de blobs** (cada pessoa é o blob gerado pelo nome, o mesmo da tela de login),
+  com efeito de brilho em quem está falando; mutar/ensurdecer.
+- Ao assistir a uma tela, ela vira o palco e os blobs passam para uma fileira no topo (botão para voltar à roda; F = tela cheia).
 - Escolher microfone/saída de áudio.
 - Compartilhar um monitor ou janela (presets 1080p30, 1080p60, 720p30) e assistir à tela dos outros.
 
 ## Arquitetura
 
 ```
-┌──────────────── App (Tauri 2) ────────────────┐        ┌─ VM Oracle (live.microbates.com) ─┐
-│ ui/  Svelte 5 + TS  (só renderiza estado)     │ HTTPS  │ Caddy :443 (TLS automático)       │
+┌──────────────── App (Tauri 2) ────────────────┐        ┌─ Home lab (live.microbates.com) ──┐
+│ ui/  Svelte 5 + TS  (só renderiza estado)     │ HTTPS  │ Caddy :8443 (TLS automático)      │
 │        ▲ eventos room://*      │ invoke(...)  │───────►│  /token,/health → token-server    │
 │ src-tauri/  comandos/eventos ──┴──────────────┤  WSS   │  resto (/rtc)   → livekit :7880   │
 │ crates/core   máquina de estados da sala      │───────►│                                   │
@@ -26,7 +28,8 @@ gratuita da **Oracle Cloud** em `https://live.microbates.com`, protegido por uma
 
 | Pasta                       | Conteúdo                                                                 |
 | --------------------------- | ------------------------------------------------------------------------ |
-| `ui/`                       | Interface Svelte 5 + Tailwind; `?mock=1` usa um backend falso (sem Tauri) |
+| `ui/`                       | Interface Svelte 5 + Tailwind (login, roda de blobs, palco de tela); `?mock=1` usa um backend falso (sem Tauri) |
+| `docs/`                     | Planos e specs de design (ex.: tela da call em roda, codificação de tela na GPU) |
 | `src-tauri/`                | Shell Tauri: comandos e eventos definidos em [`CONTRACT.md`](CONTRACT.md) |
 | `crates/core`               | Estado da sala, reconexão, traits `Transport`/`AudioSource`/`ScreenSource` |
 | `crates/media`              | Implementações reais (áudio, captura de tela, LiveKit) + fontes sintéticas |
@@ -61,8 +64,8 @@ $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
 
 ### 1. Servidor
 
-Produção: VM Oracle Cloud Always Free com Docker Compose — guia completo (conta, VM,
-firewall, DNS, `.env`, deploy automático) em [`deploy/README.md`](deploy/README.md).
+Produção: servidor Ubuntu em casa (porta 8443) com Docker Compose; o guia em
+[`deploy/README.md`](deploy/README.md) cobre também a opção VM Oracle Cloud (firewall, DNS, `.env`, deploy automático).
 
 Local (desenvolvimento), em dois terminais:
 
@@ -98,13 +101,13 @@ pnpm tauri build --bundles nsis
 1. Instale o μChat pelo instalador da [última release](https://github.com/HeitorMancini/microbates-call-app/releases)
    (reinstalar uma versão nova atualiza a existente; quem tinha o antigo "Sheeshcord" pode
    desinstalá-lo depois — nome e senha salvos continuam).
-2. Informe seu nome e a **senha da sala**. Servidor (`wss://live.microbates.com:8443`) e sala
-   (`Call 1`) são fixos.
+2. Informe seu nome e a **senha da sala**. O servidor (`wss://live.microbates.com:8443`) é fixo;
+   a sala (`Call 1`, `Call 2` ou `Call 3`) pode ser trocada dentro da call pelo seletor no topo.
 3. Sem áudio/vídeo? Veja se `https://live.microbates.com:8443/health` responde `{"status":"ok"}`
    e a seção de problemas em [`deploy/README.md`](deploy/README.md).
 
 A qualidade da tela depende do **upload de quem compartilha** (uma cópia para o servidor) e
-da banda da VM (10 TB/mês grátis de saída, folgado para o grupo).
+da banda de saída do servidor (o upload da internet de casa).
 
 ## Testes
 
@@ -157,6 +160,6 @@ x86_64 no GHCR; o servidor baixa sozinho, veja `deploy/README.md`) e **release.y
   A tela é decodificada pelo WebView (AV1 em software via dav1d se a GPU do espectador não
   decodificar AV1). Para conferir o encoder usado, rode com `RUST_LOG=media=info` e procure
   `screen encoding on the GPU`.
-- Com muitos espectadores, a banda de saída da VM e a latência até São Paulo limitam a qualidade.
+- Com muitos espectadores, o upload da internet do servidor caseiro limita a qualidade.
 - Captura real de áudio/tela não roda no CI; lá são usadas fontes sintéticas e a UI em modo mock.
 - O teste de carga roda todos os clientes numa só máquina (mede o SFU/link local, não o upload real do host).
