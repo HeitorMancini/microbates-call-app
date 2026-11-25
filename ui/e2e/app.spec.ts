@@ -32,7 +32,7 @@ test('fluxo completo: entrar, ver participantes, mutar, compartilhar e sair', as
   const people = page.getByRole('list', { name: /Pessoas na sala/ });
   await expect(people.getByRole('listitem')).toHaveCount(5);
   await expect(people.getByRole('listitem').first()).toContainText('Ana');
-  await expect(page.getByText('Conectado')).toBeVisible();
+  await expect(page.getByText('Reconectando…')).toHaveCount(0);
   // O mock faz alguém falar em poucos ticks.
   await expect(page.locator('[data-testid="participante"][data-speaking="true"]').first()).toBeVisible({ timeout: 10_000 });
   await expectNoA11yViolations(page);
@@ -66,9 +66,23 @@ test('fluxo completo: entrar, ver participantes, mutar, compartilhar e sair', as
   await expect(page.getByRole('heading', { name: 'Sua tela' })).toBeHidden();
   await expect(page.getByRole('button', { name: 'Compartilhar tela' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Sair' }).click();
+  await page.getByRole('button', { name: 'Sair da call' }).click();
   await expect(page.getByRole('button', { name: 'Entrar' })).toBeVisible();
   await expect(page.getByLabel('Nome', { exact: true })).toHaveValue('Ana');
+});
+
+test('troca de sala mantém o mudo', async ({ page }) => {
+  await joinRoom(page);
+
+  await page.getByRole('button', { name: 'Mudo' }).click();
+  await expect(page.getByRole('button', { name: 'Mudo' })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('button', { name: 'Call 1' }).click();
+  await page.getByRole('menuitemradio', { name: 'Call 2' }).click();
+
+  await expect(page.getByRole('heading', { level: 1, name: 'Call 2' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mudo' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Entrar' })).toHaveCount(0);
 });
 
 test('visualizador mostra a tela de outra pessoa e entra em tela cheia', async ({ page }) => {
@@ -87,9 +101,8 @@ test('visualizador mostra a tela de outra pessoa e entra em tela cheia', async (
 test('respeita prefers-reduced-motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await joinRoom(page);
-  const duration = await page
-    .locator('[data-testid="participante"] .anel')
-    .first()
-    .evaluate((el) => parseFloat(getComputedStyle(el).transitionDuration));
+  const brilho = page.locator('[data-testid="participante"] .brilho').first();
+  await expect(brilho.locator('canvas')).toHaveCount(0);
+  const duration = await brilho.evaluate((el) => parseFloat(getComputedStyle(el).transitionDuration));
   expect(duration).toBeLessThan(0.01);
 });

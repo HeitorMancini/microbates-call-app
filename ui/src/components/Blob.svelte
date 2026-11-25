@@ -81,9 +81,7 @@
       aria-label="Assistir a tela de {participant.name}"
       aria-pressed={assistindo}
       onclick={() => onassistir?.()}
-    >
-      AO VIVO
-    </button>
+    ></button>
   {/if}
   <div class="avatar" aria-hidden="true">
     <span
@@ -215,5 +213,10 @@
     font-weight: 800;
     letter-spacing: 0.04em;
     cursor: pointer;
+  }
+
+  .aovivo::after {
+    /* Rótulo decorativo; o nome acessível vem de aria-label. */
+    content: 'AO VIVO';
   }
 </style>
