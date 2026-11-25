@@ -6,7 +6,7 @@
 const PAUSA = 0.05;
 const CHANCE_PAUSA = 0.2;
 const INTERVALO_MIN_MS = 90;
-const INTERVALO_MAX_MS = 130;
+const INTERVALO_MAX_MS = 220;
 const INTERPOLACAO_MS = 60;
 
 /** Cria um gerador de nível de voz simulado em [0.05, 1] a partir do tempo em ms. */
