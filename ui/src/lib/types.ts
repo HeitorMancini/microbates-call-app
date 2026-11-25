@@ -81,6 +81,9 @@ export interface JoinParams {
 export const DEFAULT_SERVER_URL = 'wss://live.microbates.com:8443';
 export const DEFAULT_ROOM = 'Call 1';
 
+/** Salas disponíveis para troca sem sair da call. */
+export const SALAS: readonly string[] = ['Call 1', 'Call 2', 'Call 3'];
+
 export const EVENTS = {
   state: 'room://state',
   participants: 'room://participants',

@@ -28,16 +28,24 @@ export class RoomStore {
   /** Mensagem curta para a região `aria-live`. */
   announcement = $state('');
   busy = $state(false);
+  /** Troca de sala em andamento: a call continua visível enquanto dura. */
+  trocando = $state(false);
+  /** Última troca de sala falhou: mantém a call aberta mostrando o erro. */
+  falhaTroca = $state(false);
 
   local = $derived(this.participants.find((p) => p.isLocal) ?? null);
   muted = $derived(this.local?.muted ?? false);
   sharing = $derived(this.local?.sharingScreen ?? false);
   sharers = $derived(this.participants.filter((p) => p.sharingScreen));
   inRoom = $derived(this.status === 'connected' || this.status === 'reconnecting');
+  /** O que o `App` usa para decidir entre a tela de login e a de call. */
+  presente = $derived(this.inRoom || this.trocando || this.falhaTroca);
 
   readonly backend: Backend;
   #unlisten: Unlisten[] = [];
   #ready: Promise<void> | null = null;
+  /** Últimos parâmetros normalizados usados para entrar, para repetir a troca de sala. */
+  #ultimo: JoinParams | null = null;
 
   constructor(backend: Backend) {
     this.backend = backend;
@@ -100,6 +108,7 @@ export class RoomStore {
     this.serverUrl = clean.serverUrl;
     const ok = await this.#run(() => this.backend.joinRoom(clean));
     this.busy = false;
+    if (ok) this.#ultimo = clean;
     if (!ok && this.status === 'connecting') this.status = 'error';
     return ok;
   }
@@ -107,7 +116,35 @@ export class RoomStore {
   async leave() {
     await this.#run(() => this.backend.leaveRoom());
     this.deafened = false;
+    this.falhaTroca = false;
     this.announce('Você saiu da sala.');
+  }
+
+  /** Troca de sala sem passar pela tela de login: sai e volta a entrar com os mesmos dados. */
+  async trocarSala(sala: string): Promise<boolean> {
+    if (this.trocando || !this.#ultimo) return false;
+    if (sala === this.roomName && !this.falhaTroca) return true;
+    const estavaMudo = this.muted;
+    const estavaEnsurdecido = this.deafened;
+    const estavaCompartilhando = this.sharing;
+    this.trocando = true;
+    try {
+      await this.backend.leaveRoom();
+      const ok = await this.join({ ...this.#ultimo, room: sala });
+      this.falhaTroca = !ok;
+      if (ok) {
+        if (estavaEnsurdecido) {
+          await this.backend.setDeafened(true);
+          this.deafened = true;
+        } else if (estavaMudo) {
+          await this.backend.setMuted(true);
+        }
+        if (estavaCompartilhando) this.announce('Compartilhamento encerrado ao trocar de sala.');
+      }
+      return ok;
+    } finally {
+      this.trocando = false;
+    }
   }
 
   async toggleMute() {

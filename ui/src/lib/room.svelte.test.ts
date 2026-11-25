@@ -84,4 +84,80 @@ describe('RoomStore', () => {
     expect(store.deafened).toBe(false);
     expect(store.inRoom).toBe(false);
   });
+
+  it('troca de sala sem sair da call e mantém nome e senha', async () => {
+    const store = makeStore();
+    await store.join({ ...join, room: 'Call 1', password: 's' });
+    const visto: boolean[] = [];
+    const parar = $effect.root(() => {
+      $effect(() => {
+        visto.push(store.presente);
+      });
+    });
+    expect(await store.trocarSala('Call 2')).toBe(true);
+    parar();
+    expect(store.roomName).toBe('Call 2');
+    expect(store.local?.name).toBe('Ana');
+    expect(visto.every(Boolean)).toBe(true);
+    expect(store.trocando).toBe(false);
+  });
+
+  it('chega mudo na nova sala se estava mudo', async () => {
+    const store = makeStore();
+    await store.join({ ...join, room: 'Call 1' });
+    await store.toggleMute();
+    expect(await store.trocarSala('Call 2')).toBe(true);
+    expect(store.muted).toBe(true);
+  });
+
+  it('chega ensurdecido e mudo se estava ensurdecido', async () => {
+    const store = makeStore();
+    await store.join({ ...join, room: 'Call 1' });
+    await store.toggleDeafen();
+    expect(await store.trocarSala('Call 2')).toBe(true);
+    expect(store.deafened).toBe(true);
+    expect(store.muted).toBe(true);
+  });
+
+  it('compartilhamento para ao trocar e é anunciado', async () => {
+    const store = makeStore();
+    await store.join({ ...join, room: 'Call 1' });
+    await store.loadScreenSources();
+    await store.startShare(store.screenSources[0].id, '1080p30');
+    expect(await store.trocarSala('Call 2')).toBe(true);
+    expect(store.sharing).toBe(false);
+    expect(store.announcement).toMatch(/Compartilhamento encerrado ao trocar de sala/);
+  });
+
+  it('falha na troca mantém a call aberta com o erro; sair limpa', async () => {
+    const store = makeStore();
+    await store.join({ ...join, room: 'Call 1' });
+    expect(await store.trocarSala('   ')).toBe(false);
+    expect(store.falhaTroca).toBe(true);
+    expect(store.presente).toBe(true);
+    expect(store.error).not.toBeNull();
+    expect(await store.trocarSala('Call 3')).toBe(true);
+    expect(store.falhaTroca).toBe(false);
+    await store.trocarSala('   ');
+    await store.leave();
+    expect(store.falhaTroca).toBe(false);
+    expect(store.presente).toBe(false);
+  });
+
+  it('escolher a sala atual não faz nada', async () => {
+    const store = makeStore();
+    await store.join({ ...join, room: 'Call 1' });
+    expect(await store.trocarSala('Call 1')).toBe(true);
+    expect(store.status).toBe('connected');
+  });
+
+  it('troca durante troca é ignorada', async () => {
+    const store = makeStore();
+    await store.join({ ...join, room: 'Call 1' });
+    const a = store.trocarSala('Call 2');
+    const b = store.trocarSala('Call 3');
+    expect(await b).toBe(false);
+    expect(await a).toBe(true);
+    expect(store.roomName).toBe('Call 2');
+  });
 });

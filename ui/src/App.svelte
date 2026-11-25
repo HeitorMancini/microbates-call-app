@@ -24,7 +24,7 @@
   // Coreografia: entrar dissolve o card e expande a janela até a chamada;
   // sair escurece a chamada e encolhe a janela de volta ao card.
   $effect(() => {
-    const dentro = store.inRoom;
+    const dentro = store.presente;
     untrack(() => coreografar(dentro));
   });
 
