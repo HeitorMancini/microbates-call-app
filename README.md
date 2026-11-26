@@ -106,7 +106,8 @@ atualizar" (o clique pede confirmação, pois encerra a call). Os pacotes são a
 
 - Chave pública: `plugins.updater.pubkey` em `src-tauri/tauri.conf.json`.
 - Chave privada: cadastre nos secrets do repositório `TAURI_SIGNING_PRIVATE_KEY`
-  (conteúdo do arquivo) e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (vazio se não tiver senha).
+  (conteúdo do arquivo). A chave gerada não tem senha; se gerar uma com senha, adicione
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` ao `env` do passo "tauri build" no `release.yml`.
   Nunca a versione. Para gerar outro par: `pnpm tauri signer generate -w <arquivo>`.
 - `pnpm tauri build` local também exige `TAURI_SIGNING_PRIVATE_KEY` (por causa de
   `createUpdaterArtifacts`). Para um build sem assinatura, passe
