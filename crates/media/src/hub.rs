@@ -507,7 +507,11 @@ mod tests {
         assert_eq!(out[0], 3000);
 
         mixer.sources.clear();
-        assert_eq!(mixer.gain("a"), 50, "gain outlives the participant's buffers");
+        assert_eq!(
+            mixer.gain("a"),
+            50,
+            "gain outlives the participant's buffers"
+        );
         mixer.set_gain("a", 100);
         assert_eq!(mixer.gain("a"), 100);
     }

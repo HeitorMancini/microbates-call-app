@@ -102,17 +102,18 @@ fn run(
         }
         let bytes = queue.make_contiguous();
         let floats: Vec<f32> = bytes
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_le_bytes(*b))
             .collect();
         downmix_to_i16(&floats, CHANNELS, &mut samples);
         pending.extend_from_slice(&samples);
-        let mut chunks = pending.chunks_exact(SAMPLES_PER_10MS);
-        for chunk in &mut chunks {
+        let (chunks, rest) = pending.as_chunks::<SAMPLES_PER_10MS>();
+        for chunk in chunks {
             hub.push_screen_audio(chunk);
         }
-        let rest = chunks.remainder().to_vec();
-        pending = rest;
+        pending = rest.to_vec();
     }
     let _ = client.stop_stream();
 }
