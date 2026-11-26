@@ -143,6 +143,11 @@ async fn select_audio_device(
 }
 
 #[tauri::command]
+fn set_mic_volume(hub: State<'_, MediaHub>, percent: u32) {
+    hub.set_mic_volume(percent);
+}
+
+#[tauri::command]
 async fn list_screen_sources(svc: State<'_, RoomService>) -> Result<Vec<ScreenSource>, RoomError> {
     svc.list_screen_sources().await
 }
@@ -211,6 +216,7 @@ pub fn run() {
             let sink = Arc::new(TauriSink(app.handle().clone()));
             let hub = MediaHub::default();
             let deps = media_dependencies(&hub, fake_media_enabled());
+            app.manage(hub);
             // O controlador da sala cria tarefas Tokio: precisa do runtime do Tauri.
             let service =
                 tauri::async_runtime::block_on(async move { RoomService::new(deps, sink) });
@@ -228,6 +234,7 @@ pub fn run() {
             set_deafened,
             list_audio_devices,
             select_audio_device,
+            set_mic_volume,
             list_screen_sources,
             start_screen_share,
             stop_screen_share,

@@ -245,6 +245,8 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
       if (!list.some((d) => d.id === id)) throw `Dispositivo de áudio não encontrado: ${id}`;
     },
 
+    async setMicVolume() {},
+
     async listScreenSources() {
       return structuredClone(SOURCES);
     },

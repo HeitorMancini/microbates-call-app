@@ -32,6 +32,18 @@
       </select>
     </div>
   {/each}
+  <div class="grupo">
+    <label for="volume-microfone">Volume do microfone: {store.micVolume}%</label>
+    <input
+      id="volume-microfone"
+      type="range"
+      min="0"
+      max="200"
+      step="5"
+      value={store.micVolume}
+      oninput={(e) => store.setMicVolume(e.currentTarget.valueAsNumber)}
+    />
+  </div>
 </div>
 <div class="acoes">
   <button type="button" class="botao botao-primario" onclick={onDone}>Pronto</button>

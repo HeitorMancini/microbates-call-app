@@ -62,6 +62,17 @@ describe('RoomStore', () => {
     expect(store.error).toMatch(/não encontrado/);
   });
 
+  it('ajusta o volume do microfone limitando a 0–200%', async () => {
+    const store = makeStore();
+    expect(store.micVolume).toBe(100);
+    await store.setMicVolume(150);
+    expect(store.micVolume).toBe(150);
+    await store.setMicVolume(500);
+    expect(store.micVolume).toBe(200);
+    await store.setMicVolume(-5);
+    expect(store.micVolume).toBe(0);
+  });
+
   it('compartilha tela e aparece entre quem transmite', async () => {
     const store = makeStore();
     await store.join(join);

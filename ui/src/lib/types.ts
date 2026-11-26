@@ -106,6 +106,8 @@ export interface Backend {
   setDeafened(deafened: boolean): Promise<void>;
   listAudioDevices(): Promise<AudioDevices>;
   selectAudioDevice(kind: DeviceKind, id: string): Promise<void>;
+  /** Ganho do microfone em porcentagem (0–200, 100 = sem alteração). */
+  setMicVolume(percent: number): Promise<void>;
   listScreenSources(): Promise<ScreenSource[]>;
   startScreenShare(sourceId: string, preset: ScreenPreset, withAudio: boolean): Promise<void>;
   stopScreenShare(): Promise<void>;

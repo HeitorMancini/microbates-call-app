@@ -9,7 +9,7 @@
 //! * remote/local video -> [`MediaHub::subscribe_previews`] -> UI (`room://screen-frame`)
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -31,6 +31,20 @@ const PRIME_SAMPLES: usize = SAMPLES_PER_10MS * 4;
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Highest volume (percent) accepted for the microphone and for each participant.
+pub const MAX_VOLUME_PERCENT: u32 = 200;
+
+/// Scales `samples` by `percent` (100 = unchanged), saturating at the i16 range.
+pub(crate) fn apply_gain(samples: &mut [i16], percent: u32) {
+    if percent == 100 {
+        return;
+    }
+    for s in samples {
+        let v = i64::from(*s) * i64::from(percent) / 100;
+        *s = v.clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16;
+    }
 }
 
 /// Mixer key of the screen-share audio of `identity`, kept apart from their voice.
@@ -153,6 +167,7 @@ struct Inner {
     preview_config: PreviewConfig,
     throttle: Mutex<PreviewThrottle>,
     local_identity: Mutex<Option<String>>,
+    mic_volume: AtomicU32,
     counters: Counters,
 }
 
@@ -192,6 +207,7 @@ impl MediaHub {
                     last: HashMap::new(),
                 }),
                 local_identity: Mutex::new(None),
+                mic_volume: AtomicU32::new(100),
                 counters: Counters::default(),
             }),
         }
@@ -223,6 +239,17 @@ impl MediaHub {
         *lock(&self.inner.mic) = sink;
     }
 
+    /// Sets the microphone gain in percent (clamped to `0..=MAX_VOLUME_PERCENT`).
+    pub fn set_mic_volume(&self, percent: u32) {
+        self.inner
+            .mic_volume
+            .store(percent.min(MAX_VOLUME_PERCENT), Ordering::Relaxed);
+    }
+
+    pub fn mic_volume(&self) -> u32 {
+        self.inner.mic_volume.load(Ordering::Relaxed)
+    }
+
     /// Queues 48 kHz mono PCM for the published microphone track. Returns `false` when
     /// no transport is listening (or it is lagging and the chunk was dropped).
     pub fn push_mic(&self, samples: &[i16]) -> bool {
@@ -230,7 +257,9 @@ impl MediaHub {
         let Some(tx) = guard.as_ref() else {
             return false;
         };
-        let sent = tx.try_send(samples.to_vec()).is_ok();
+        let mut chunk = samples.to_vec();
+        apply_gain(&mut chunk, self.mic_volume());
+        let sent = tx.try_send(chunk).is_ok();
         if sent {
             self.inner
                 .counters
@@ -448,6 +477,28 @@ mod tests {
         assert!(hub.push_mic(&[7; SAMPLES_PER_10MS]));
         assert_eq!(rx.recv().await.unwrap()[0], 7);
         assert_eq!(hub.stats().mic_chunks_sent, 1);
+    }
+
+    #[tokio::test]
+    async fn mic_volume_scales_chunks_with_saturation_and_clamps() {
+        let hub = MediaHub::default();
+        let (tx, mut rx) = mpsc::channel(8);
+        hub.set_mic_sink(Some(tx));
+        hub.push_mic(&[1000; 2]);
+        assert_eq!(rx.recv().await.unwrap(), vec![1000; 2], "100% is untouched");
+
+        hub.set_mic_volume(50);
+        hub.push_mic(&[1000, -1000]);
+        assert_eq!(rx.recv().await.unwrap(), vec![500, -500]);
+
+        hub.set_mic_volume(500);
+        assert_eq!(hub.mic_volume(), MAX_VOLUME_PERCENT);
+        hub.push_mic(&[i16::MAX, 100]);
+        assert_eq!(rx.recv().await.unwrap(), vec![i16::MAX, 200]);
+
+        hub.set_mic_volume(0);
+        hub.push_mic(&[1000]);
+        assert_eq!(rx.recv().await.unwrap(), vec![0]);
     }
 
     #[tokio::test]

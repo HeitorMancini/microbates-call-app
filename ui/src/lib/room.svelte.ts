@@ -24,6 +24,8 @@ export class RoomStore {
   devices = $state<AudioDevices>({ inputs: [], outputs: [] });
   selectedInput = $state('default');
   selectedOutput = $state('default');
+  /** Ganho do microfone em % (0–200). */
+  micVolume = $state(100);
   screenSources = $state<ScreenSource[]>([]);
   sharePreset = $state<ScreenPreset>('1080p30');
   /** Mensagem curta para a região `aria-live`. */
@@ -193,6 +195,11 @@ export class RoomStore {
       if (kind === 'input') this.selectedInput = id;
       else this.selectedOutput = id;
     }
+  }
+
+  async setMicVolume(percent: number) {
+    const value = Math.min(200, Math.max(0, Math.round(percent)));
+    if (await this.#run(() => this.backend.setMicVolume(value))) this.micVolume = value;
   }
 
   async loadScreenSources() {
