@@ -13,6 +13,8 @@
     onassistir,
     nivel,
     estilo,
+    volume = 100,
+    onvolume,
   }: {
     participant: Participant;
     pequeno: boolean;
@@ -20,7 +22,27 @@
     onassistir?: () => void;
     nivel: () => number;
     estilo?: string;
+    /** Volume local desta pessoa em % (0–200). */
+    volume?: number;
+    onvolume?: (percent: number) => void;
   } = $props();
+
+  let menuAberto = $state(false);
+  const temVolume = $derived(!participant.isLocal && !!onvolume);
+
+  function abrirMenu(e: MouseEvent) {
+    if (!temVolume) return;
+    e.preventDefault();
+    menuAberto = true;
+  }
+
+  function fecharFora(e: PointerEvent) {
+    if (menuAberto && !(e.target as Element).closest('.volume-menu')) menuAberto = false;
+  }
+
+  function aoTeclar(e: KeyboardEvent) {
+    if (menuAberto && e.key === 'Escape') menuAberto = false;
+  }
 
   const svg = $derived(blobatar(participant.name));
   const destaque = $derived(destaqueDe(corDoBlob(svg)));
@@ -68,6 +90,8 @@
   });
 </script>
 
+<svelte:window onpointerdown={fecharFora} onkeydown={aoTeclar} />
+
 <li
   class="blob"
   class:pequeno
@@ -77,6 +101,7 @@
   data-muted={participant.muted}
   data-pequeno={pequeno}
   style={estilo}
+  oncontextmenu={abrirMenu}
 >
   {#snippet avatarVisual()}
     <div class="avatar" aria-hidden="true">
@@ -113,9 +138,41 @@
         class="sr-only">: {description}</span
       >{/if}
   </span>
+  {#if menuAberto}
+    <div class="volume-menu" role="group" aria-label="Volume de {participant.name}">
+      <label for="volume-{participant.id}">Volume: {volume}%</label>
+      <input
+        id="volume-{participant.id}"
+        type="range"
+        min="0"
+        max="200"
+        step="5"
+        value={volume}
+        oninput={(e) => onvolume?.(e.currentTarget.valueAsNumber)}
+      />
+      <button type="button" class="botao" onclick={() => onvolume?.(100)}>Restaurar 100%</button>
+    </div>
+  {/if}
 </li>
 
 <style>
+  .volume-menu {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: grid;
+    gap: 0.4rem;
+    min-width: 11rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.6rem;
+    background: var(--superficie, #1c1c22);
+    border: 1px solid rgb(255 255 255 / 0.15);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
+    font-size: 0.8rem;
+  }
+
   .blob {
     position: relative;
     display: grid;

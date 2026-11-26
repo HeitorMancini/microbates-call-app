@@ -29,6 +29,7 @@ export function createTauriBackend(): Backend {
     listAudioDevices: () => invoke<AudioDevices>('list_audio_devices'),
     selectAudioDevice: (kind, id) => invoke('select_audio_device', { kind, id }),
     setMicVolume: (percent) => invoke('set_mic_volume', { percent }),
+    setParticipantVolume: (id, percent) => invoke('set_participant_volume', { id, percent }),
     listScreenSources: () => invoke<ScreenSource[]>('list_screen_sources'),
     startScreenShare: (sourceId, preset, withAudio) =>
       invoke('start_screen_share', { sourceId, preset, withAudio }),

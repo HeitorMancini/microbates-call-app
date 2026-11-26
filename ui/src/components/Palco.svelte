@@ -7,7 +7,17 @@
   import Blob from './Blob.svelte';
   import ScreenViewer from './ScreenViewer.svelte';
 
-  let { participants, backend }: { participants: Participant[]; backend: Backend } = $props();
+  let {
+    participants,
+    backend,
+    volumeOf,
+    onvolume,
+  }: {
+    participants: Participant[];
+    backend: Backend;
+    volumeOf?: (id: string) => number;
+    onvolume?: (id: string, percent: number) => void;
+  } = $props();
 
   // Metade do corpo do avatar (96px/46px no Blob), para centrar no ponto da roda.
   const METADE_GRANDE = 48;
@@ -110,6 +120,8 @@
             assistindo={id === assistindo}
             onassistir={() => (assistindo = id)}
             {nivel}
+            volume={volumeOf?.(id) ?? 100}
+            onvolume={onvolume && ((percent: number) => onvolume(id, percent))}
             estilo={estiloDoBlob(id)}
           />
         {/if}

@@ -28,6 +28,44 @@ function spokenText(el: Element): string {
 
 const nivel = () => 0.6;
 
+describe('Blob: volume por pessoa', () => {
+  it('botão direito abre o controle e o slider chama onvolume', async () => {
+    const onvolume = vi.fn();
+    render(Blob, { participant: p({ name: 'Ana' }), pequeno: false, assistindo: false, nivel, volume: 80, onvolume });
+    expect(screen.queryByRole('group', { name: /Volume de Ana/ })).toBeNull();
+    await userEvent.pointer({ keys: '[MouseRight]', target: screen.getByTestId('participante') });
+    expect(screen.getByRole('group', { name: /Volume de Ana/ })).toBeTruthy();
+    const slider = screen.getByRole('slider') as HTMLInputElement;
+    expect(slider.value).toBe('80');
+    slider.value = '150';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(onvolume).toHaveBeenCalledWith(150);
+  });
+
+  it('"Restaurar 100%" volta ao padrão e Esc fecha', async () => {
+    const onvolume = vi.fn();
+    render(Blob, { participant: p({ name: 'Ana' }), pequeno: false, assistindo: false, nivel, volume: 30, onvolume });
+    await userEvent.pointer({ keys: '[MouseRight]', target: screen.getByTestId('participante') });
+    await userEvent.click(screen.getByRole('button', { name: 'Restaurar 100%' }));
+    expect(onvolume).toHaveBeenCalledWith(100);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('group', { name: /Volume de Ana/ })).toBeNull();
+  });
+
+  it('você mesmo não tem controle de volume', async () => {
+    render(Blob, {
+      participant: p({ name: 'Ana', isLocal: true }),
+      pequeno: false,
+      assistindo: false,
+      nivel,
+      volume: 100,
+      onvolume: vi.fn(),
+    });
+    await userEvent.pointer({ keys: '[MouseRight]', target: screen.getByTestId('participante') });
+    expect(screen.queryByRole('group')).toBeNull();
+  });
+});
+
 describe('Blob', () => {
   it('leitor de tela ouve nome e estado (mesmo texto de antes)', () => {
     render(Blob, {

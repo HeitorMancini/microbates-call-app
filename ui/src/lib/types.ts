@@ -108,6 +108,8 @@ export interface Backend {
   selectAudioDevice(kind: DeviceKind, id: string): Promise<void>;
   /** Ganho do microfone em porcentagem (0–200, 100 = sem alteração). */
   setMicVolume(percent: number): Promise<void>;
+  /** Volume local de uma pessoa (voz e áudio de tela) em % (0–200). */
+  setParticipantVolume(id: string, percent: number): Promise<void>;
   listScreenSources(): Promise<ScreenSource[]>;
   startScreenShare(sourceId: string, preset: ScreenPreset, withAudio: boolean): Promise<void>;
   stopScreenShare(): Promise<void>;

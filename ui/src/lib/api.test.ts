@@ -34,6 +34,7 @@ describe('backend Tauri segue o CONTRACT.md', () => {
     await b.setDeafened(false);
     await b.selectAudioDevice('output', 'headset');
     await b.setMicVolume(120);
+    await b.setParticipantVolume('ana', 60);
     await b.startScreenShare('monitor:0',     '1080p60', true);
     await b.stopScreenShare();
     expect(invoke.mock.calls).toEqual([
@@ -43,6 +44,7 @@ describe('backend Tauri segue o CONTRACT.md', () => {
       ['set_deafened', { deafened: false }],
       ['select_audio_device', { kind: 'output', id: 'headset' }],
       ['set_mic_volume', { percent: 120 }],
+      ['set_participant_volume', { id: 'ana', percent: 60 }],
       ['start_screen_share', { sourceId: 'monitor:0', preset: '1080p60', withAudio: true }],
       ['stop_screen_share'],
     ]);

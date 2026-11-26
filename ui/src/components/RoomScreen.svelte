@@ -22,6 +22,9 @@
 
   let devicesOpen = $state(false);
 
+  const volumeOf = (id: string) => store.volumeOf(id);
+  const onvolume = (id: string, percent: number) => void store.setParticipantVolume(id, percent);
+
   function onKey(e: KeyboardEvent) {
     if (!(e.ctrlKey && e.shiftKey)) return;
     const key = e.key.toLowerCase();
@@ -39,7 +42,7 @@
 
 <div class="sala">
   <main class="area-palco" aria-label="Sala {store.roomName}">
-    <Palco participants={store.participants} backend={store.backend} />
+    <Palco participants={store.participants} backend={store.backend} {volumeOf} {onvolume} />
   </main>
 
   <header class="barra" use:arrastavel={{ maximizarComDuploClique: true }}>

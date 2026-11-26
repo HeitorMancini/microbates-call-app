@@ -148,6 +148,11 @@ fn set_mic_volume(hub: State<'_, MediaHub>, percent: u32) {
 }
 
 #[tauri::command]
+fn set_participant_volume(hub: State<'_, MediaHub>, id: String, percent: u32) {
+    hub.set_participant_volume(&id, percent);
+}
+
+#[tauri::command]
 async fn list_screen_sources(svc: State<'_, RoomService>) -> Result<Vec<ScreenSource>, RoomError> {
     svc.list_screen_sources().await
 }
@@ -235,6 +240,7 @@ pub fn run() {
             list_audio_devices,
             select_audio_device,
             set_mic_volume,
+            set_participant_volume,
             list_screen_sources,
             start_screen_share,
             stop_screen_share,

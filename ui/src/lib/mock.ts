@@ -246,6 +246,7 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
     },
 
     async setMicVolume() {},
+    async setParticipantVolume() {},
 
     async listScreenSources() {
       return structuredClone(SOURCES);

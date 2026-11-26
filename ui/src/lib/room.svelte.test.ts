@@ -73,6 +73,16 @@ describe('RoomStore', () => {
     expect(store.micVolume).toBe(0);
   });
 
+  it('guarda o volume de cada pessoa (0–200) e assume 100 por padrão', async () => {
+    const store = makeStore();
+    expect(store.volumeOf('ana')).toBe(100);
+    await store.setParticipantVolume('ana', 40);
+    await store.setParticipantVolume('bia', 900);
+    expect(store.volumeOf('ana')).toBe(40);
+    expect(store.volumeOf('bia')).toBe(200);
+    expect(store.volumeOf('caio')).toBe(100);
+  });
+
   it('compartilha tela e aparece entre quem transmite', async () => {
     const store = makeStore();
     await store.join(join);

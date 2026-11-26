@@ -47,9 +47,11 @@ pub(crate) fn apply_gain(samples: &mut [i16], percent: u32) {
     }
 }
 
+const SCREEN_AUDIO_SUFFIX: &str = "#screen";
+
 /// Mixer key of the screen-share audio of `identity`, kept apart from their voice.
 pub(crate) fn screen_audio_key(identity: &str) -> String {
-    format!("{identity}#screen")
+    format!("{identity}{SCREEN_AUDIO_SUFFIX}")
 }
 
 /// Limits applied to frames forwarded to the UI (`room://screen-frame`).
@@ -102,12 +104,30 @@ struct SourceBuffer {
     primed: bool,
 }
 
+fn owner_gain(gains: &HashMap<String, u32>, id: &str) -> u32 {
+    let owner = id.strip_suffix(SCREEN_AUDIO_SUFFIX).unwrap_or(id);
+    gains.get(owner).copied().unwrap_or(100)
+}
+
 #[derive(Default)]
 struct Mixer {
     sources: HashMap<String, SourceBuffer>,
+    /// Volume (percent) chosen by the local user per participant; absent means 100.
+    gains: HashMap<String, u32>,
 }
 
 impl Mixer {
+    fn set_gain(&mut self, id: &str, percent: u32) {
+        self.gains
+            .insert(id.to_owned(), percent.min(MAX_VOLUME_PERCENT));
+    }
+
+    /// Gain of the person owning mixer key `id` (their screen audio follows their voice).
+    #[cfg(test)]
+    fn gain(&self, id: &str) -> u32 {
+        owner_gain(&self.gains, id)
+    }
+
     fn push(&mut self, id: &str, samples: &[i16]) {
         let buf = self.sources.entry(id.to_owned()).or_default();
         buf.samples.extend(samples.iter().copied());
@@ -117,15 +137,19 @@ impl Mixer {
 
     fn mix(&mut self, out: &mut [i16]) {
         out.fill(0);
-        for buf in self.sources.values_mut() {
+        let gains = &self.gains;
+        for (id, buf) in &mut self.sources {
             if !buf.primed {
                 if buf.samples.len() < PRIME_SAMPLES {
                     continue;
                 }
                 buf.primed = true;
             }
+            let gain = owner_gain(gains, id);
             let n = out.len().min(buf.samples.len());
-            for (o, s) in out.iter_mut().zip(buf.samples.drain(..n)) {
+            let mut chunk: Vec<i16> = buf.samples.drain(..n).collect();
+            apply_gain(&mut chunk, gain);
+            for (o, s) in out.iter_mut().zip(chunk) {
                 *o = o.saturating_add(s);
             }
             if buf.samples.is_empty() {
@@ -373,6 +397,12 @@ impl MediaHub {
         lock(&self.inner.mixer).push(participant_id, samples);
     }
 
+    /// Sets how loud `participant_id` (voice and screen audio) is for the local user, in
+    /// percent (clamped to `0..=MAX_VOLUME_PERCENT`). Kept until the app restarts.
+    pub fn set_participant_volume(&self, participant_id: &str, percent: u32) {
+        lock(&self.inner.mixer).set_gain(participant_id, percent);
+    }
+
     pub fn remove_remote(&self, participant_id: &str) {
         let mut mixer = lock(&self.inner.mixer);
         mixer.sources.remove(participant_id);
@@ -459,6 +489,27 @@ mod tests {
         mixer.push("b", &vec![i16::MAX; PRIME_SAMPLES]);
         mixer.mix(&mut out);
         assert_eq!(out[0], i16::MAX);
+    }
+
+    #[test]
+    fn participant_volume_scales_voice_and_screen_audio_and_survives_rejoin() {
+        let mut mixer = Mixer::default();
+        mixer.set_gain("a", 50);
+        mixer.set_gain("b", 500);
+        assert_eq!(mixer.gain("b"), MAX_VOLUME_PERCENT);
+        assert_eq!(mixer.gain("nobody"), 100);
+        for id in ["a", "a#screen", "b"] {
+            mixer.push(id, &vec![1000; PRIME_SAMPLES]);
+        }
+        let mut out = vec![0i16; SAMPLES_PER_10MS];
+        mixer.mix(&mut out);
+        // 500 (a) + 500 (a#screen) + 2000 (b)
+        assert_eq!(out[0], 3000);
+
+        mixer.sources.clear();
+        assert_eq!(mixer.gain("a"), 50, "gain outlives the participant's buffers");
+        mixer.set_gain("a", 100);
+        assert_eq!(mixer.gain("a"), 100);
     }
 
     #[test]
