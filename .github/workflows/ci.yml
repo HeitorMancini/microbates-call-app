@@ -147,6 +147,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: tauri build
+        # Sem a chave de assinatura (PRs e forks não têm secrets): só o instalador, sem artefatos do updater.
+        env:
+          TAURI_CONFIG: '{"bundle":{"createUpdaterArtifacts":false}}'
         run: pnpm tauri build --bundles nsis
       - name: Instalador
         uses: actions/upload-artifact@v4
