@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import ControlesJanela from './components/ControlesJanela.svelte';
+  import FundoAscii from './components/FundoAscii.svelte';
   import JoinScreen from './components/JoinScreen.svelte';
   import RoomScreen from './components/RoomScreen.svelte';
   import { animarPara, MINIMO_SALA, TAMANHO_ENTRADA, TAMANHO_SALA } from './lib/janela';
@@ -54,6 +55,7 @@
   <p class="modo-teste">Modo de demonstração: participantes e imagens simulados.</p>
 {/if}
 
+<FundoAscii />
 <ControlesJanela maximizar={naSala} />
 
 {#if naSala}
@@ -68,6 +70,8 @@
 
 <style>
   .tela {
+    position: relative;
+    z-index: 1;
     height: 100%;
   }
 

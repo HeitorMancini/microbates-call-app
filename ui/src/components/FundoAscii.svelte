@@ -1,42 +1,19 @@
 <script lang="ts">
-  import dados from '../lib/cenas/cenas.json';
-  import { prepararCena, semente, sortearCena, validarCenas, type Desenhar } from '../lib/cenas/motor';
+  import { prepararCena, semente, type Desenhar } from '../lib/cenas/motor';
+  import { fundo } from '../lib/fundo.svelte';
 
-  const CHAVE = 'sheeshcord:ultima-cena';
   const CW = 6;
   const CH = 9;
 
-  let { pausado = false }: { pausado?: boolean } = $props();
-
-  let canvas: HTMLCanvasElement;
-
-  function lerAnterior(): string | null {
-    try {
-      return localStorage.getItem(CHAVE);
-    } catch {
-      return null;
-    }
-  }
-
-  // Uma "abertura": sorteia a cena e a semente uma vez por montagem do componente.
-  const abertura = (() => {
-    try {
-      const cena = sortearCena(validarCenas(dados), lerAnterior());
-      try {
-        localStorage.setItem(CHAVE, cena.nome);
-      } catch {
-        // Sem armazenamento: só não evita a repetição.
-      }
-      return { cena, seed: Math.floor(Math.random() * 2 ** 31) };
-    } catch (err) {
-      console.error('cenas.json:', err);
-      return null;
-    }
-  })();
+  let canvas = $state<HTMLCanvasElement>();
 
   $effect(() => {
-    const ctx = canvas.getContext('2d');
-    if (!ctx || !abertura) return;
+    const abertura = fundo.ligado ? fundo.abertura : null;
+    if (!canvas || !abertura) return;
+    const { cena, seed } = abertura;
+    const el = canvas;
+    const ctx = el.getContext('2d');
+    if (!ctx) return;
     const quieto = matchMedia('(prefers-reduced-motion: reduce)').matches;
     let cols = 0;
     let rows = 0;
@@ -64,10 +41,10 @@
     }
 
     function medir() {
-      const { width, height } = canvas.getBoundingClientRect();
+      const { width, height } = el.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.max(1, Math.round(width * dpr));
-      canvas.height = Math.max(1, Math.round(height * dpr));
+      el.width = Math.max(1, Math.round(width * dpr));
+      el.height = Math.max(1, Math.round(height * dpr));
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx!.font = `${CH * 1.05}px ui-monospace, Consolas, monospace`;
       ctx!.textBaseline = 'top';
@@ -76,22 +53,22 @@
       glifos = new Array(cols * rows).fill('');
       cores = new Array(cols * rows).fill('');
       try {
-        desenhar = prepararCena(abertura!.cena, cols, rows, semente(abertura!.seed));
+        desenhar =         prepararCena(cena, cols, rows, semente(seed));
       } catch (err) {
-        console.error(`cenas.json, cena "${abertura!.cena.nome}":`, err);
+                console.error(`cenas.json, cena "${cena.nome}":`, err);
         desenhar = null;
       }
       quadro();
     }
 
     const ro = new ResizeObserver(medir);
-    ro.observe(canvas);
+    ro.observe(el);
     medir();
 
     const timer = quieto
       ? undefined
       : setInterval(() => {
-          if (pausado || document.hidden) return;
+          if (document.hidden) return;
           t++;
           quadro();
         }, 100);
@@ -103,15 +80,24 @@
   });
 </script>
 
-<canvas bind:this={canvas} class="fundo-ascii" aria-hidden="true"></canvas>
+<div class="fundo-ascii" aria-hidden="true">
+  {#if fundo.ligado && fundo.abertura}
+    <canvas bind:this={canvas}></canvas>
+  {/if}
+</div>
 
 <style>
   .fundo-ascii {
-    position: absolute;
+    position: fixed;
     inset: 0;
+    z-index: 0;
+    background: var(--color-breu);
+  }
+
+  canvas {
+    display: block;
     width: 100%;
     height: 100%;
-    display: block;
     background: #060608;
   }
 </style>

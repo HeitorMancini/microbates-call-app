@@ -16,7 +16,8 @@
     | 'settings'
     | 'phone-leave'
     | 'chat'
-    | 'chevron-down';
+    | 'chevron-down'
+    | 'shuffle';
 </script>
 
 <script lang="ts">
@@ -84,5 +85,7 @@
     <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
   {:else if name === 'chevron-down'}
     <path d="m6 9 6 6 6-6" />
+  {:else if name === 'shuffle'}
+    <path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
   {/if}
 </svg>

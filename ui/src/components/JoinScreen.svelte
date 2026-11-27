@@ -7,7 +7,7 @@
   import { DEFAULT_ROOM, DEFAULT_SERVER_URL } from '../lib/types';
   import { hasErrors, MAX_FIELD_LEN, validateJoin } from '../lib/validation';
   import BotaoEntrar from './BotaoEntrar.svelte';
-  import FundoAscii from './FundoAscii.svelte';
+  import { fundo } from '../lib/fundo.svelte';
   import Icon from './Icon.svelte';
   import LogoMicro from './LogoMicro.svelte';
 
@@ -85,8 +85,11 @@
 </script>
 
 <main class="entrada" class:saindo use:arrastavel>
-  <FundoAscii pausado={saindo} />
   <div class="fosco" aria-hidden="true"></div>
+
+  <button type="button" class="embaralhar" aria-label="Trocar fundo" title="Trocar fundo" onclick={() => fundo.embaralhar()}>
+    <Icon name="shuffle" size={16} />
+  </button>
 
   <form class="card" novalidate onsubmit={submit} aria-labelledby="titulo-app">
     <h1 id="titulo-app" class="titulo">
@@ -161,7 +164,29 @@
     position: relative;
     height: 100%;
     overflow: hidden;
-    background: #000;
+  }
+
+  .embaralhar {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    z-index: 6;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    border: 1px solid rgb(255 255 255 / 0.12);
+    background: rgb(8 8 10 / 0.55);
+    color: var(--color-nevoa);
+    transition:
+      background-color 160ms ease,
+      color 160ms ease;
+  }
+
+  .embaralhar:hover {
+    background: rgb(8 8 10 / 0.85);
+    color: var(--color-giz);
   }
 
   .fosco {
@@ -171,12 +196,7 @@
     transition: opacity 380ms ease;
   }
 
-  .entrada :global(.fundo-ascii) {
-    transition: opacity 380ms ease;
-  }
-
-  /* Ao entrar na chamada: a paisagem some no preto e o card se dissolve em zoom. */
-  .saindo :global(.fundo-ascii),
+  /* Ao entrar na chamada: só o card se dissolve em zoom; o fundo continua. */
   .saindo .fosco {
     opacity: 0;
   }

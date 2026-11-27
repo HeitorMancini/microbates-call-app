@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { fundo } from '../lib/fundo.svelte';
   import type { RoomStore } from '../lib/room.svelte';
   import type { DeviceKind } from '../lib/types';
+  import Icon from './Icon.svelte';
   import Slider from './Slider.svelte';
 
   let { store, onDone }: { store: RoomStore; onDone: () => void } = $props();
@@ -37,6 +39,23 @@
     <label for="volume-microfone">Volume do microfone: {store.micVolume}%</label>
     <Slider id="volume-microfone" value={store.micVolume} oninput={(percent) => store.setMicVolume(percent)} />
   </div>
+  <div class="grupo">
+    <span class="rotulo">Fundo</span>
+    <div class="fundo-linha">
+      <button type="button" class="botao" onclick={() => fundo.embaralhar()} disabled={!fundo.ligado}>
+        <Icon name="shuffle" size={18} />
+        Trocar fundo
+      </button>
+      <label class="opcao">
+        <input
+          type="checkbox"
+          checked={fundo.ligado}
+          onchange={(e) => fundo.alternar(e.currentTarget.checked)}
+        />
+        Fundo ASCII
+      </label>
+    </div>
+  </div>
 </div>
 <div class="acoes">
   <button type="button" class="botao botao-primario" onclick={onDone}>Pronto</button>
@@ -53,8 +72,22 @@
     gap: 0.35rem;
   }
 
-  label {
+  label,
+  .rotulo {
     font-weight: 600;
+  }
+
+  .fundo-linha {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .opcao {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
   }
 
   select.campo {

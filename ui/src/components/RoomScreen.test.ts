@@ -38,16 +38,16 @@ describe('RoomScreen', () => {
     expect(screen.getByRole('contentinfo')).toBeInTheDocument();
   });
 
-  it('Configurações abre Dispositivos de áudio', async () => {
+  it('Configurações abre Configurações', async () => {
     const { user } = await setup();
     await user.click(screen.getByRole('button', { name: 'Configurações' }));
-    expect(await screen.findByRole('dialog', { name: 'Dispositivos de áudio' })).toBeVisible();
+    expect(await screen.findByRole('dialog', { name: 'Configurações' })).toBeVisible();
   });
 
   it('Configurações → seleciona dispositivo de saída', async () => {
     const { store, user } = await setup();
     await user.click(screen.getByRole('button', { name: 'Configurações' }));
-    await screen.findByRole('dialog', { name: 'Dispositivos de áudio' });
+    await screen.findByRole('dialog', { name: 'Configurações' });
     const output = await screen.findByRole('combobox', { name: 'Saída de áudio' });
     await screen.findByRole('option', { name: 'Headset' });
     await user.selectOptions(output, 'headset');

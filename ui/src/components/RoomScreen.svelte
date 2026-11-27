@@ -90,7 +90,7 @@
   <div class="sr-only" aria-live="polite" aria-atomic="true">{store.announcement}</div>
 </div>
 
-<Dialog bind:open={devicesOpen} id="dispositivos" title="Dispositivos de áudio">
+<Dialog bind:open={devicesOpen} id="dispositivos" title="Configurações">
   <DeviceSettings {store} onDone={() => (devicesOpen = false)} />
 </Dialog>
 
