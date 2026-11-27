@@ -1,6 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { createMockBackend, type MockOptions } from './mock';
+import { createWebBackend } from './web';
 import {
   EVENTS,
   type AudioDevices,
@@ -60,6 +61,12 @@ export function shouldUseMock(search: string, insideTauri: boolean): boolean {
   return !insideTauri;
 }
 
+/** O build --mode web (PWA) fala direto com o LiveKit; no dev e nos testes continua o mock. */
+export function shouldUseWeb(search: string, insideTauri: boolean, mode: string): boolean {
+  const flag = new URLSearchParams(search).get('mock');
+  return mode === 'web' && !insideTauri && flag !== '1' && flag !== 'true';
+}
+
 export function mockOptionsFromSearch(search: string): MockOptions {
   const params = new URLSearchParams(search);
   return {
@@ -70,6 +77,7 @@ export function mockOptionsFromSearch(search: string): MockOptions {
 
 export function createBackend(): Backend {
   const search = typeof location === 'undefined' ? '' : location.search;
+  if (shouldUseWeb(search, isTauri(), import.meta.env.MODE)) return createWebBackend();
   return shouldUseMock(search, isTauri())
     ? createMockBackend(mockOptionsFromSearch(search))
     : createTauriBackend();

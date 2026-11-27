@@ -9,3 +9,4 @@ src-tauri/gen
 
 /dist/
 .superpowers/
+ui/dist-web

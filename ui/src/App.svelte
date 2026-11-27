@@ -56,7 +56,9 @@
 {/if}
 
 <FundoAscii escuro={naSala || fase === 'abrindo'} />
-<ControlesJanela maximizar={naSala} />
+{#if store.backend.kind !== 'web'}
+  <ControlesJanela maximizar={naSala} />
+{/if}
 
 {#if naSala}
   <div class="tela sala" class:fechando={fase === 'fechando'}>

@@ -35,8 +35,12 @@
     <Icon name={store.deafened ? 'headphones-off' : 'headphones'} size={28} />
     <span class="sr-only">Ensurdecer</span>
   </button>
-  <span class="sep" aria-hidden="true">/</span>
-  {#if store.sharing}
+  {#if store.backend.kind !== 'web'}
+    <span class="sep" aria-hidden="true">/</span>
+  {/if}
+  {#if store.backend.kind === 'web'}
+    <!-- Compartilhar tela não existe no navegador móvel. -->
+  {:else if store.sharing}
     <button type="button" class="controle ativo" title="Parar de compartilhar" onclick={() => store.stopShare()}>
       <Icon name="screen-off" size={28} />
       <span class="sr-only">Parar de compartilhar</span>

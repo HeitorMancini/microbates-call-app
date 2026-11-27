@@ -115,6 +115,18 @@ atualizar" (o clique pede confirmação, pois encerra a call). Os pacotes são a
 - Ao publicar, aumente `version` em `tauri.conf.json` (e no workspace) e crie a tag `vX.Y.Z`
   com o mesmo número. Versões anteriores à 0.6.0 não têm o updater e precisam ser reinstaladas uma vez.
 
+### Versão web / PWA (celular)
+
+`https://chat.microbates.com` serve o mesmo app no navegador, instalável pelo celular
+("Adicionar à tela inicial"). Entra nas calls de voz e assiste transmissões; não compartilha
+tela nem tem supressão de ruído/sensibilidade. No iOS o áudio pausa com a tela bloqueada.
+O service worker se atualiza sozinho (sem OTA).
+
+- Build: `cd ui; pnpm build:web` (saída em `ui/dist-web`). Deploy: workflow `pwa.yml`
+  a cada push na `main` que mude `ui/`.
+- Configuração única: Settings → Pages → Source **GitHub Actions**, domínio
+  `chat.microbates.com` e **Enforce HTTPS**; DNS: `CNAME chat → heitormancini.github.io`.
+
 ## Usando
 
 1. Instale o μChat pelo instalador da [última release](https://github.com/HeitorMancini/microbates-call-app/releases)

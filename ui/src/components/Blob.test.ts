@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { Participant } from '../lib/types';
 import Blob from './Blob.svelte';
 
@@ -33,6 +33,26 @@ describe('Blob: ajuste de volume', () => {
     const oncontexto = vi.fn();
     render(Blob, { participant: p({ name: 'Ana' }), pequeno: false, assistindo: false, nivel, oncontexto });
     await userEvent.pointer({ keys: '[MouseRight]', target: screen.getByTestId('participante') });
+    expect(oncontexto).toHaveBeenCalledOnce();
+  });
+
+  it('toque longo (500 ms) chama oncontexto; toque curto não', () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const toque = (tipo: string) =>
+      Object.assign(new MouseEvent(tipo, { bubbles: true }), { pointerType: 'touch' });
+    const oncontexto = vi.fn();
+    render(Blob, { participant: p({ name: 'Ana' }), pequeno: false, assistindo: false, nivel, oncontexto });
+    const item = screen.getByTestId('participante');
+    item.dispatchEvent(toque('pointerdown'));
+    vi.advanceTimersByTime(200);
+    item.dispatchEvent(toque('pointerup'));
+    vi.advanceTimersByTime(600);
+    expect(oncontexto).not.toHaveBeenCalled();
+    item.dispatchEvent(toque('pointerdown'));
+    vi.advanceTimersByTime(500);
     expect(oncontexto).toHaveBeenCalledOnce();
   });
 

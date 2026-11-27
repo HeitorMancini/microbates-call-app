@@ -19,8 +19,10 @@ class ResizeObserverFalso {
 }
 vi.stubGlobal('ResizeObserver', ResizeObserverFalso);
 
-async function setup() {
-  const store = new RoomStore(createMockBackend({ latencyMs: 0, autoSpeak: false, frames: false }));
+async function setup(kind?: 'web') {
+  const backend = createMockBackend({ latencyMs: 0, autoSpeak: false, frames: false });
+  if (kind) Object.defineProperty(backend, 'kind', { value: kind });
+  const store = new RoomStore(backend);
   await store.join({ serverUrl: 'ws://h', room: 'Call 1', name: 'Ana' });
   render(RoomScreen, { store });
   return { store, user: userEvent.setup() };
@@ -51,6 +53,15 @@ describe('RoomScreen', () => {
     expect(await screen.findByText('Versão 1.2.3')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Verificar atualizações' }));
     expect(await screen.findByText('Você já está na versão mais recente.')).toBeVisible();
+  });
+
+  it('no navegador some o que só existe no desktop', async () => {
+    const { user } = await setup('web');
+    await user.click(screen.getByRole('button', { name: 'Configurações' }));
+    await screen.findByRole('dialog', { name: 'Configurações' });
+    expect(screen.queryByRole('button', { name: 'Verificar atualizações' })).toBeNull();
+    expect(screen.queryByLabelText('Supressão de ruído')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Compartilhar tela/ })).toBeNull();
   });
 
   it('Configurações → seleciona dispositivo de saída', async () => {

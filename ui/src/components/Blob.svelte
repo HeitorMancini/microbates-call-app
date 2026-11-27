@@ -32,6 +32,14 @@
     oncontexto();
   }
 
+  // Toque longo equivale ao botão direito (iOS não dispara contextmenu).
+  let toqueLongo: ReturnType<typeof setTimeout> | undefined;
+  function aoTocar(e: PointerEvent) {
+    if (e.pointerType !== 'touch' || participant.isLocal || !oncontexto) return;
+    toqueLongo = setTimeout(oncontexto, 500);
+  }
+  const soltar = () => clearTimeout(toqueLongo);
+
   const svg = $derived(blobatar(participant.name));
   const destaque = $derived(destaqueDe(corDoBlob(svg)));
   const cores = $derived([tom(destaque, 0.08, 0.9), destaque.cor, tom(destaque, -0.08, 1), tom(destaque, 0.15, 0.6)]);
@@ -88,6 +96,10 @@
   data-pequeno={pequeno}
   style={estilo}
   oncontextmenu={abrirMenu}
+  onpointerdown={aoTocar}
+  onpointerup={soltar}
+  onpointercancel={soltar}
+  onpointerleave={soltar}
 >
   {#snippet avatarVisual()}
     <div class="avatar" aria-hidden="true">

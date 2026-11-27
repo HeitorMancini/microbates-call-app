@@ -101,7 +101,7 @@ export type Unlisten = () => void;
 
 /** Superfície do backend usada pela UI: implementada pelo Tauri ou pelo mock. */
 export interface Backend {
-  readonly kind: 'tauri' | 'mock';
+  readonly kind: 'tauri' | 'mock' | 'web';
   joinRoom(params: JoinParams): Promise<void>;
   leaveRoom(): Promise<void>;
   setMuted(muted: boolean): Promise<void>;

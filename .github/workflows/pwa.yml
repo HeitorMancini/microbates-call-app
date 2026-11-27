@@ -1,0 +1,44 @@
+name: PWA
+
+on:
+  push:
+    branches: [main]
+    paths: ["ui/**", "Cargo.toml", ".github/workflows/pwa.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm vitest run
+      - run: pnpm build:web
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ui/dist-web
+      - id: deployment
+        uses: actions/deploy-pages@v4

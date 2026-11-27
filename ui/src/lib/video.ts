@@ -77,6 +77,14 @@ export async function connectVideoSession({ url, token }: ViewerCredentials): Pr
     void p;
   });
 
+  return videoSessionFromRoom(room, true);
+}
+
+/**
+ * Liga as telas de uma sala já conectada a elementos <video>. Com ownsRoom o close() também
+ * desconecta a sala (canal de vídeo do desktop); na PWA a sala é a da call e continua aberta.
+ */
+export function videoSessionFromRoom(room: Room, ownsRoom: boolean): VideoSession {
   return {
     watch(participantId, el, onUpdate) {
       let track: RemoteVideoTrack | undefined;
@@ -174,7 +182,7 @@ export async function connectVideoSession({ url, token }: ViewerCredentials): Pr
       };
     },
     close() {
-      void room.disconnect();
+      if (ownsRoom) void room.disconnect();
     },
   };
 }

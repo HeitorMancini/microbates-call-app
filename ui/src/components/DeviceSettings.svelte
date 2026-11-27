@@ -18,6 +18,7 @@
     void store.loadDevices();
   });
 
+  const web = $derived(store.backend.kind === 'web');
   let versao = $state('');
   let verificando = $state(false);
   let resultado = $state('');
@@ -51,6 +52,7 @@
 <div class="campos">
   {#each groups as group (group.kind)}
     {@const list = group.kind === 'input' ? store.devices.inputs : store.devices.outputs}
+    {#if !(web && group.kind === 'output' && list.length === 0)}
     <div class="grupo">
       <label for="dispositivo-{group.kind}">{group.label}</label>
       <select
@@ -65,7 +67,9 @@
         {/each}
       </select>
     </div>
+    {/if}
   {/each}
+  {#if !web}
   <div class="grupo">
     <label for="volume-microfone">Volume do microfone: {store.micVolume}%</label>
     <Slider id="volume-microfone" value={store.micVolume} oninput={(percent) => store.setMicVolume(percent)} />
@@ -98,6 +102,7 @@
       Quanto mais baixo, mais ruído de fundo é cortado. Fale e ajuste até a marca ficar logo abaixo do nível da sua voz.
     </p>
   </div>
+  {/if}
   <div class="grupo">
     <span class="rotulo">Fundo</span>
     <div class="fundo-linha">
@@ -117,12 +122,14 @@
   </div>
   <div class="grupo">
     <span class="rotulo">Versão {versao}</span>
-    <div class="fundo-linha">
-      <button type="button" class="botao" onclick={verificar} disabled={verificando}>
-        {verificando ? 'Verificando…' : 'Verificar atualizações'}
-      </button>
-      <span role="status" class="opcao">{resultado}</span>
-    </div>
+    {#if !web}
+      <div class="fundo-linha">
+        <button type="button" class="botao" onclick={verificar} disabled={verificando}>
+          {verificando ? 'Verificando…' : 'Verificar atualizações'}
+        </button>
+        <span role="status" class="opcao">{resultado}</span>
+      </div>
+    {/if}
   </div>
 </div>
 <div class="acoes">

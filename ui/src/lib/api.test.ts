@@ -5,7 +5,7 @@ const listen = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invoke(...a), isTauri: () => false }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: (...a: unknown[]) => listen(...a) }));
 
-const { createTauriBackend, createBackend, errorMessage, shouldUseMock } = await import('./api');
+const { createTauriBackend, createBackend, errorMessage, shouldUseMock, shouldUseWeb } = await import('./api');
 
 beforeEach(() => {
   invoke.mockReset().mockResolvedValue(undefined);
@@ -22,6 +22,15 @@ describe('shouldUseMock', () => {
 
   it('createBackend cai no mock no navegador', () => {
     expect(createBackend().kind).toBe('mock');
+  });
+});
+
+describe('shouldUseWeb', () => {
+  it('só no build web, fora do Tauri e sem ?mock', () => {
+    expect(shouldUseWeb('', false, 'web')).toBe(true);
+    expect(shouldUseWeb('?mock=1', false, 'web')).toBe(false);
+    expect(shouldUseWeb('', true, 'web')).toBe(false);
+    expect(shouldUseWeb('', false, 'development')).toBe(false);
   });
 });
 
