@@ -49,6 +49,88 @@
         { "tipo": "cordilheira", "base": "horizonte", "relevo": 0.13, "escala": 0.12, "velocidade": 0, "crista": "/", "corpo": ":", "cor": ["#7a2fa8", "#2e1440"], "ate": "horizonte" },
         { "tipo": "grade", "de": "horizonte", "linhas": "#ff3dc8", "verticais": "#22e6ff", "velocidade": 0.25 }
       ]
+    },
+    {
+      "nome": "Dunas ao luar",
+      "descricao": "Dunas de areia suaves em parallax sob uma lua baixa e poeira ao vento. Tons quentes de terracota e âmbar.",
+      "horizonte": [0.48, 0.56],
+      "variacaoMatiz": [-15, 15],
+      "camadas": [
+        { "tipo": "estrelas", "quantidade": 55, "ate": "horizonte-0.08", "caracteres": ".*", "cor": "#d8cbb8", "piscar": 0.07 },
+        { "tipo": "astro", "forma": "disco", "x": [0.2, 0.8], "y": "horizonte-0.05", "raio": [4.5, 6.5], "caracteres": "@o", "cor": "#f4dfb6", "limite": "horizonte" },
+        { "tipo": "cordilheira", "base": "horizonte+0.02", "relevo": 0.14, "escala": 0.045, "velocidade": 0.012, "crista": ".-~", "corpo": ":.,", "cor": ["#8c583a", "#3d2317"] },
+        { "tipo": "nevoa", "y": "horizonte+0.1", "caractere": ".", "cor": "#b57c56", "densidade": 0.7, "velocidade": 0.035 },
+        { "tipo": "cordilheira", "base": "horizonte+0.18", "relevo": 0.16, "escala": 0.065, "velocidade": 0.025, "crista": ".-~", "corpo": ":.,", "cor": ["#b57348", "#4f2d1c"] },
+        { "tipo": "particulas", "quantidade": 18, "de": "horizonte", "ate": 0.95, "caracteres": ".*", "cor": "#e8b482", "piscar": 0.05, "deriva": 5 }
+      ]
+    },
+    {
+      "nome": "Aurora boreal",
+      "descricao": "Faixas verdes e turquesa ondulando no céu ártico, picos nevados e lago escuro refletindo a aurora.",
+      "horizonte": [0.56, 0.64],
+      "variacaoMatiz": [-12, 18],
+      "camadas": [
+        { "tipo": "estrelas", "quantidade": 65, "ate": "horizonte-0.05", "caracteres": ".+", "cor": "#c9e4ff", "piscar": 0.09 },
+        { "tipo": "ceu", "ate": "horizonte-0.06", "caracteres": ".:~|", "cor": ["#0b1528", "#135e4b", "#3ee69b", "#18385c"], "velocidade": 0.035 },
+        { "tipo": "astro", "forma": "disco", "x": [0.15, 0.85], "y": [0.1, 0.24], "raio": 2.2, "caracteres": "@o", "cor": "#e6f4ff" },
+        { "tipo": "cordilheira", "base": "horizonte", "relevo": 0.18, "escala": 0.09, "velocidade": 0.01, "crista": "^A", "corpo": "#:.", "cor": ["#cbe0f5", "#24344d"], "ate": "horizonte" },
+        { "tipo": "agua", "de": "horizonte", "caracteres": "~-._", "cor": ["#1f5c6e", "#0d2233"], "velocidade": 0.05, "reflexo": "#5ce6a8" }
+      ]
+    },
+    {
+      "nome": "Tempestade em alto-mar",
+      "descricao": "Nuvens carregadas, ondas rápidas com espuma, chuva diagonal e lua encoberta.",
+      "horizonte": [0.45, 0.54],
+      "variacaoMatiz": [-10, 10],
+      "camadas": [
+        { "tipo": "ceu", "ate": "horizonte", "caracteres": ":-=#", "cor": ["#18202c", "#2d3a4b"], "velocidade": 0.03 },
+        { "tipo": "astro", "forma": "disco", "x": [0.25, 0.75], "y": [0.14, 0.26], "raio": 3, "caracteres": "Oo", "cor": "#9fb3c8" },
+        { "tipo": "nuvens", "ate": "horizonte-0.04", "caracteres": "-=%#", "cor": "#435366", "densidade": 0.2, "velocidade": 0.09 },
+        { "tipo": "agua", "de": "horizonte", "caracteres": "^~-_", "cor": ["#2b4c6b", "#101e2e"], "velocidade": 0.24, "reflexo": "#7d99b5" },
+        { "tipo": "particulas", "quantidade": 48, "de": 0, "ate": 1, "caracteres": "|/", "cor": "#8aa4bf", "piscar": 0.02, "deriva": 8 }
+      ]
+    },
+    {
+      "nome": "Vulcão na madrugada",
+      "descricao": "Cumes incandescentes ao fundo, fumaça densa, encosta escura em primeiro plano e brasas subindo.",
+      "horizonte": [0.58, 0.66],
+      "variacaoMatiz": [-10, 12],
+      "camadas": [
+        { "tipo": "ceu", "ate": "horizonte", "caracteres": ".:-=", "cor": ["#14090c", "#3b1117", "#6e1d1b"], "velocidade": 0.015 },
+        { "tipo": "nuvens", "ate": "horizonte-0.1", "caracteres": "-=%", "cor": "#4a2528", "densidade": 0.35, "velocidade": 0.03 },
+        { "tipo": "cordilheira", "base": "horizonte-0.04", "relevo": 0.24, "escala": 0.07, "velocidade": 0.008, "crista": "*^", "corpo": "#:+.", "cor": ["#ff5917", "#4d1410", "#1c0a0c"], "ate": "horizonte+0.15" },
+        { "tipo": "nevoa", "y": "horizonte+0.05", "caractere": "~", "cor": "#7a3026", "densidade": 0.55, "velocidade": 0.04 },
+        { "tipo": "cordilheira", "base": "horizonte+0.2", "relevo": 0.14, "escala": 0.13, "velocidade": 0.02, "crista": "^A", "corpo": "#:=", "cor": ["#3d1b1e", "#14080a"] },
+        { "tipo": "particulas", "quantidade": 28, "de": 0.25, "ate": 0.95, "caracteres": ".*", "cor": "#ff7b29", "piscar": 0.14, "deriva": 5 }
+      ]
+    },
+    {
+      "nome": "Inverno na serra",
+      "descricao": "Serras cobertas de neve, névoa gelada entre os vales, vegetação baixa e flocos caindo.",
+      "variacaoMatiz": [-12, 12],
+      "camadas": [
+        { "tipo": "estrelas", "quantidade": 40, "ate": 0.45, "caracteres": ".*", "cor": "#dceaff", "piscar": 0.06 },
+        { "tipo": "cordilheira", "base": 0.54, "relevo": 0.2, "escala": 0.07, "velocidade": 0.01, "crista": "^A", "corpo": "*:.", "cor": ["#dce8f8", "#5c708f"] },
+        { "tipo": "nevoa", "y": 0.6, "caractere": "~", "cor": "#9fb3cc", "densidade": 0.58, "velocidade": 0.025 },
+        { "tipo": "cordilheira", "base": 0.72, "relevo": 0.16, "escala": 0.11, "velocidade": 0.02, "crista": "^Y", "corpo": "#:.", "cor": ["#bfd4ed", "#3d4e69"] },
+        { "tipo": "capim", "base": 0.87, "relevo": 0.1, "escala": 0.15, "velocidade": 0.06, "caracteres": "^|!,", "cor": ["#7fa1c4", "#243247"] },
+        { "tipo": "particulas", "quantidade": 50, "de": 0, "ate": 1, "caracteres": ".*", "cor": "#f0f6ff", "piscar": 0.05, "deriva": 7 }
+      ]
+    },
+    {
+      "nome": "Pradaria ao pôr do sol",
+      "descricao": "Colinas de capim dourado balançando ao vento quente sob um sol baixo e pólen flutuando.",
+      "horizonte": [0.46, 0.54],
+      "variacaoMatiz": [-15, 15],
+      "camadas": [
+        { "tipo": "ceu", "ate": "horizonte", "caracteres": ".:-=", "cor": ["#4a1c40", "#9e2a2b", "#e07a22", "#f5be49"], "velocidade": 0.01 },
+        { "tipo": "astro", "forma": "disco", "x": [0.25, 0.75], "y": "horizonte-0.02", "raio": [5, 7.5], "caracteres": "@O", "cor": "#ffe07d", "limite": "horizonte" },
+        { "tipo": "nuvens", "ate": "horizonte-0.12", "caracteres": "-=", "cor": "#d96b43", "densidade": 0.45, "velocidade": 0.025 },
+        { "tipo": "capim", "base": "horizonte+0.02", "relevo": 0.12, "escala": 0.07, "velocidade": 0.14, "caracteres": "/\\|,", "cor": ["#9c6615", "#422708"] },
+        { "tipo": "capim", "base": "horizonte+0.18", "relevo": 0.14, "escala": 0.09, "velocidade": 0.17, "caracteres": "/\\|,", "cor": ["#c4841d", "#54330b"] },
+        { "tipo": "capim", "base": "horizonte+0.34", "relevo": 0.15, "escala": 0.11, "velocidade": 0.2, "caracteres": "/\\|,", "cor": ["#e6a32e", "#69410e"] },
+        { "tipo": "particulas", "quantidade": 20, "de": "horizonte", "ate": 0.95, "caracteres": ".*", "cor": "#ffe270", "piscar": 0.1, "deriva": 4 }
+      ]
     }
   ]
 }
