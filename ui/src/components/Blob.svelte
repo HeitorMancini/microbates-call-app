@@ -5,6 +5,7 @@
   import type { Participant } from '../lib/types';
   import type { Brilho } from '../lib/brilho';
   import Icon from './Icon.svelte';
+  import Slider from './Slider.svelte';
 
   let {
     participant,
@@ -141,14 +142,10 @@
   {#if menuAberto}
     <div class="volume-menu" role="group" aria-label="Volume de {participant.name}">
       <label for="volume-{participant.id}">Volume: {volume}%</label>
-      <input
+      <Slider
         id="volume-{participant.id}"
-        type="range"
-        min="0"
-        max="200"
-        step="5"
         value={volume}
-        oninput={(e) => onvolume?.(e.currentTarget.valueAsNumber)}
+        oninput={(percent) => onvolume?.(percent)}
       />
       <button type="button" class="botao" onclick={() => onvolume?.(100)}>Restaurar 100%</button>
     </div>

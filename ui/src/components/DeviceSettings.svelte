@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { RoomStore } from '../lib/room.svelte';
   import type { DeviceKind } from '../lib/types';
+  import Slider from './Slider.svelte';
 
   let { store, onDone }: { store: RoomStore; onDone: () => void } = $props();
 
@@ -34,15 +35,7 @@
   {/each}
   <div class="grupo">
     <label for="volume-microfone">Volume do microfone: {store.micVolume}%</label>
-    <input
-      id="volume-microfone"
-      type="range"
-      min="0"
-      max="200"
-      step="5"
-      value={store.micVolume}
-      oninput={(e) => store.setMicVolume(e.currentTarget.valueAsNumber)}
-    />
+    <Slider id="volume-microfone" value={store.micVolume} oninput={(percent) => store.setMicVolume(percent)} />
   </div>
 </div>
 <div class="acoes">
