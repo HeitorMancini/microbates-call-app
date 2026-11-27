@@ -129,12 +129,14 @@
   .veu {
     position: absolute;
     inset: 0;
-    background: rgb(3 3 5 / 0);
-    transition: background-color 420ms ease;
+    /* Mesmo efeito do .fosco da tela de login. */
+    opacity: 0;
+    backdrop-filter: blur(1.5px);
+    transition: opacity 380ms ease;
   }
 
   .veu.escuro {
-    background: rgb(3 3 5 / 0.62);
+    opacity: 1;
   }
 
   canvas {
