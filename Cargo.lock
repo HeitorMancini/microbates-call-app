@@ -658,7 +658,7 @@ dependencies = [
 
 [[package]]
 name = "core"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "async-trait",
  "serde",
@@ -2343,7 +2343,7 @@ dependencies = [
 
 [[package]]
 name = "integration-tests"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "futures-util",
  "jsonwebtoken 11.1.0",
@@ -2970,7 +2970,7 @@ dependencies = [
 
 [[package]]
 name = "load-test"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -3051,7 +3051,7 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
 name = "media"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "async-trait",
  "core",
@@ -5071,7 +5071,7 @@ dependencies = [
 
 [[package]]
 name = "sheeshcord-app"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "core",
  "media",
@@ -5863,7 +5863,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "token-server"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "axum",
  "http-body-util",

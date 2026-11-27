@@ -1,5 +1,6 @@
 <script lang="ts">
   import { blobatar } from 'blobatar';
+  import { Blobatar } from '@blobatar/svelte';
   import { corDoBlob, destaqueDe, type Destaque } from '../lib/cor';
   import { arrastavel } from '../lib/janela';
   import type { RoomStore } from '../lib/room.svelte';
@@ -29,11 +30,11 @@
     return { name: '', password: '' };
   }
 
-  function gerar(nome: string): { svg: string; destaque: Destaque } | null {
+  function gerar(nome: string): { svg: string; name: string; destaque: Destaque } | null {
     const limpo = nome.trim();
     if (!limpo) return null;
     const svg = blobatar(limpo);
-    return { svg, destaque: destaqueDe(corDoBlob(svg)) };
+    return { svg, name: limpo, destaque: destaqueDe(corDoBlob(svg)) };
   }
 
   const salvo = loadSaved();
@@ -101,7 +102,7 @@
       <div class="avatar" class:esperando aria-hidden="true">
       {#if blob}
         {#key blob.svg}
-          <img class="blob" alt="" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(blob.svg)}`} />
+          <Blobatar class="blob-entrada" name={blob.name} animate="always" />
         {/key}
       {:else}
         <span class="vazio"></span>
@@ -247,7 +248,7 @@
     gap: 12px;
   }
 
-  .blob {
+  .avatar :global(.blob-entrada) {
     display: block;
     width: 96px;
     height: 96px;
@@ -260,7 +261,7 @@
 
 
 
-  .esperando .blob {
+  .esperando :global(.blob-entrada) {
     opacity: 0.3;
     filter: grayscale(1);
     transform: scale(0.92);

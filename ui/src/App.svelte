@@ -55,7 +55,7 @@
   <p class="modo-teste">Modo de demonstração: participantes e imagens simulados.</p>
 {/if}
 
-<FundoAscii />
+<FundoAscii escuro={naSala || fase === 'abrindo'} />
 <ControlesJanela maximizar={naSala} />
 
 {#if naSala}

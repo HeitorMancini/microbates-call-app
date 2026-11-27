@@ -6,6 +6,7 @@
   import type { Backend, Participant } from '../lib/types';
   import Blob from './Blob.svelte';
   import ScreenViewer from './ScreenViewer.svelte';
+  import Slider from './Slider.svelte';
 
   let {
     participants,
@@ -84,6 +85,10 @@
   const nivel = () => envelope(performance.now());
 
   function estiloDoBlob(id: string): string {
+    if (id === ajustando) {
+      // Centro da janela, um pouco acima para sobrar espaço ao controle embaixo.
+      return `z-index: 41; transform: translate(calc(${largura / 2}px - 50%), ${altura * 0.38 - METADE_GRANDE}px)`;
+    }
     const ponto = layout.blobs.get(id);
     if (!ponto) return 'display: none';
     const metade = ponto.pequeno ? METADE_PEQUENA : METADE_GRANDE;
@@ -104,7 +109,25 @@
   function voltarParaPalco() {
     modo = 'palco';
   }
+
+  // Ajuste de volume: o blob escolhido vai para o centro, o resto escurece.
+  let ajustando = $state<string | null>(null);
+  const alvoAjuste = $derived(participants.find((p) => p.id === ajustando) ?? null);
+
+  function abrirAjuste(id: string) {
+    ajustando = id;
+  }
+
+  function fecharAjuste() {
+    ajustando = null;
+  }
+
+  function aoTeclar(e: KeyboardEvent) {
+    if (ajustando && e.key === 'Escape') fecharAjuste();
+  }
 </script>
+
+<svelte:window onkeydown={aoTeclar} />
 
 <div class="palco" bind:this={raiz}>
   {#if participants.length === 0}
@@ -116,17 +139,31 @@
         {#if participant}
           <Blob
             {participant}
-            pequeno={layout.blobs.get(id)?.pequeno ?? false}
+            pequeno={id === ajustando ? false : (layout.blobs.get(id)?.pequeno ?? false)}
             assistindo={id === assistindo}
             onassistir={() => (assistindo = id)}
             {nivel}
-            volume={volumeOf?.(id) ?? 100}
-            onvolume={onvolume && ((percent: number) => onvolume(id, percent))}
+            oncontexto={onvolume ? () => abrirAjuste(id) : undefined}
             estilo={estiloDoBlob(id)}
           />
         {/if}
       {/each}
     </ul>
+  {/if}
+
+  {#if alvoAjuste}
+    <!-- Fixo e acima de tudo (barra, controles): clicar na área escurecida sai do ajuste. -->
+    <div class="escuro" role="presentation" onpointerdown={fecharAjuste}></div>
+    <div class="ajuste" role="group" aria-label="Volume de {alvoAjuste.name}">
+      <label for="volume-{alvoAjuste.id}">Volume de {alvoAjuste.name}: {volumeOf?.(alvoAjuste.id) ?? 100}%</label>
+      <Slider
+        id="volume-{alvoAjuste.id}"
+        grande
+        value={volumeOf?.(alvoAjuste.id) ?? 100}
+        oninput={(percent) => onvolume?.(alvoAjuste.id, percent)}
+      />
+      <button type="button" class="botao" onclick={() => onvolume?.(alvoAjuste.id, 100)}>Restaurar 100%</button>
+    </div>
   {/if}
 
   {#if temTela && sharer && layout.tela}
@@ -179,6 +216,43 @@
     left: 0;
     pointer-events: auto;
     transition: transform 650ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .escuro {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgb(3 3 5 / 0.8);
+    pointer-events: auto;
+    animation: aparecer 250ms ease;
+  }
+
+  .ajuste {
+    position: fixed;
+    left: 50%;
+    bottom: 72px;
+    z-index: 41;
+    transform: translateX(-50%);
+    width: min(440px, calc(100% - 80px));
+    display: grid;
+    gap: 14px;
+    justify-items: center;
+    pointer-events: auto;
+  }
+
+  @keyframes aparecer {
+    from {
+      opacity: 0;
+    }
+  }
+
+  .ajuste label {
+    font-weight: 600;
+    font-size: 17px;
+  }
+
+  .ajuste :global(.slider) {
+    width: 100%;
   }
 
   .tela {

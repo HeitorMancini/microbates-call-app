@@ -28,44 +28,21 @@ function spokenText(el: Element): string {
 
 const nivel = () => 0.6;
 
-describe('Blob: volume por pessoa', () => {
-  it('botão direito abre o controle e o slider chama onvolume', async () => {
-    const onvolume = vi.fn();
-    render(Blob, { participant: p({ name: 'Ana' }), pequeno: false, assistindo: false, nivel, volume: 80, onvolume });
-    expect(screen.queryByRole('group', { name: /Volume de Ana/ })).toBeNull();
+describe('Blob: ajuste de volume', () => {
+  it('botão direito chama oncontexto', async () => {
+    const oncontexto = vi.fn();
+    render(Blob, { participant: p({ name: 'Ana' }), pequeno: false, assistindo: false, nivel, oncontexto });
     await userEvent.pointer({ keys: '[MouseRight]', target: screen.getByTestId('participante') });
-    expect(screen.getByRole('group', { name: /Volume de Ana/ })).toBeTruthy();
-    const slider = screen.getByRole('slider') as HTMLInputElement;
-    expect(slider.value).toBe('80');
-    slider.value = '150';
-    slider.dispatchEvent(new Event('input', { bubbles: true }));
-    expect(onvolume).toHaveBeenCalledWith(150);
+    expect(oncontexto).toHaveBeenCalledOnce();
   });
 
-  it('"Restaurar 100%" volta ao padrão e Esc fecha', async () => {
-    const onvolume = vi.fn();
-    render(Blob, { participant: p({ name: 'Ana' }), pequeno: false, assistindo: false, nivel, volume: 30, onvolume });
+  it('você mesmo não abre o ajuste', async () => {
+    const oncontexto = vi.fn();
+    render(Blob, { participant: p({ name: 'Ana', isLocal: true }), pequeno: false, assistindo: false, nivel, oncontexto });
     await userEvent.pointer({ keys: '[MouseRight]', target: screen.getByTestId('participante') });
-    await userEvent.click(screen.getByRole('button', { name: 'Restaurar 100%' }));
-    expect(onvolume).toHaveBeenCalledWith(100);
-    await userEvent.keyboard('{Escape}');
-    expect(screen.queryByRole('group', { name: /Volume de Ana/ })).toBeNull();
-  });
-
-  it('você mesmo não tem controle de volume', async () => {
-    render(Blob, {
-      participant: p({ name: 'Ana', isLocal: true }),
-      pequeno: false,
-      assistindo: false,
-      nivel,
-      volume: 100,
-      onvolume: vi.fn(),
-    });
-    await userEvent.pointer({ keys: '[MouseRight]', target: screen.getByTestId('participante') });
-    expect(screen.queryByRole('group')).toBeNull();
+    expect(oncontexto).not.toHaveBeenCalled();
   });
 });
-
 describe('Blob', () => {
   it('leitor de tela ouve nome e estado (mesmo texto de antes)', () => {
     render(Blob, {
@@ -78,15 +55,11 @@ describe('Blob', () => {
     expect(spokenText(item)).toBe('Ana: você, falando');
   });
 
-  it('mostra o blob do blobatar do nome', async () => {
-    const { blobatar } = await import('blobatar');
+  it('mostra o blob animado (motion always) do nome', () => {
     render(Blob, { participant: p({ name: 'Ana' }), pequeno: false, assistindo: false, nivel });
     const item = screen.getByTestId('participante');
-    const img = item.querySelector('img.imagem')!;
-    expect(img).toHaveAttribute('src', expect.stringContaining('data:image/svg+xml'));
-    expect(img.getAttribute('src')).toContain(encodeURIComponent(blobatar('Ana')).slice(0, 40));
+    expect(item.querySelector('svg.imagem')).not.toBeNull();
   });
-
   it('quem compartilha tem AO VIVO clicável', async () => {
     const user = userEvent.setup();
     const onassistir = vi.fn();
@@ -114,7 +87,7 @@ describe('Blob', () => {
       nivel,
     });
     const item = screen.getByTestId('participante');
-    const img = item.querySelector('img.imagem')!;
+    const img = item.querySelector('.imagem')!;
     const botao = screen.getByRole('button', { name: 'AO VIVO — assistir a tela de Caio' });
     expect(botao.contains(img)).toBe(true);
     await user.click(img);

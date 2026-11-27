@@ -1,11 +1,11 @@
 <script lang="ts">
   import { blobatar } from 'blobatar';
+  import { Blobatar } from '@blobatar/svelte';
   import { onDestroy } from 'svelte';
   import { corDoBlob, destaqueDe, tom } from '../lib/cor';
   import type { Participant } from '../lib/types';
   import type { Brilho } from '../lib/brilho';
   import Icon from './Icon.svelte';
-  import Slider from './Slider.svelte';
 
   let {
     participant,
@@ -14,8 +14,7 @@
     onassistir,
     nivel,
     estilo,
-    volume = 100,
-    onvolume,
+    oncontexto,
   }: {
     participant: Participant;
     pequeno: boolean;
@@ -23,26 +22,14 @@
     onassistir?: () => void;
     nivel: () => number;
     estilo?: string;
-    /** Volume local desta pessoa em % (0–200). */
-    volume?: number;
-    onvolume?: (percent: number) => void;
+    /** Botão direito: abre o ajuste de volume desta pessoa (não vale para o usuário local). */
+    oncontexto?: () => void;
   } = $props();
 
-  let menuAberto = $state(false);
-  const temVolume = $derived(!participant.isLocal && !!onvolume);
-
   function abrirMenu(e: MouseEvent) {
-    if (!temVolume) return;
+    if (participant.isLocal || !oncontexto) return;
     e.preventDefault();
-    menuAberto = true;
-  }
-
-  function fecharFora(e: PointerEvent) {
-    if (menuAberto && !(e.target as Element).closest('.volume-menu')) menuAberto = false;
-  }
-
-  function aoTeclar(e: KeyboardEvent) {
-    if (menuAberto && e.key === 'Escape') menuAberto = false;
+    oncontexto();
   }
 
   const svg = $derived(blobatar(participant.name));
@@ -91,8 +78,6 @@
   });
 </script>
 
-<svelte:window onpointerdown={fecharFora} onkeydown={aoTeclar} />
-
 <li
   class="blob"
   class:pequeno
@@ -112,7 +97,7 @@
         style:--cor-contorno={destaque.cor}
         bind:this={hostBrilho}
       ></span>
-      <img class="imagem" alt="" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} />
+      <Blobatar class="imagem" name={participant.name} animate="always" />
       {#if participant.muted}
         <span class="selo selo-mudo"><Icon name="mic-off" size={pequeno ? 10 : 14} /></span>
       {/if}
@@ -139,37 +124,9 @@
         class="sr-only">: {description}</span
       >{/if}
   </span>
-  {#if menuAberto}
-    <div class="volume-menu" role="group" aria-label="Volume de {participant.name}">
-      <label for="volume-{participant.id}">Volume: {volume}%</label>
-      <Slider
-        id="volume-{participant.id}"
-        value={volume}
-        oninput={(percent) => onvolume?.(percent)}
-      />
-      <button type="button" class="botao" onclick={() => onvolume?.(100)}>Restaurar 100%</button>
-    </div>
-  {/if}
 </li>
 
 <style>
-  .volume-menu {
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 20;
-    display: grid;
-    gap: 0.4rem;
-    min-width: 11rem;
-    padding: 0.6rem 0.75rem;
-    border-radius: 0.6rem;
-    background: var(--superficie, #1c1c22);
-    border: 1px solid rgb(255 255 255 / 0.15);
-    box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
-    font-size: 0.8rem;
-  }
-
   .blob {
     position: relative;
     display: grid;
@@ -199,7 +156,7 @@
     height: 46px;
   }
 
-  .imagem {
+  :global(.imagem) {
     position: relative;
     z-index: 1;
     width: 130%;

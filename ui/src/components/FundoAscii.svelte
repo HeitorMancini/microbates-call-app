@@ -6,6 +6,7 @@
   const CW = 6;
   const CH = 9;
 
+  let { escuro = false }: { escuro?: boolean } = $props();
   let canvas = $state<HTMLCanvasElement>();
 
   $effect(() => {
@@ -30,7 +31,30 @@
     }
     const glifos: string[] = new Array(cols * rows).fill('');
     const cores: string[] = new Array(cols * rows).fill('');
+    // Última célula desenhada na tela (visível): só redesenha o que mudou.
+    let desenhados: string[] = [];
+    // Cada par glifo+cor vira um bitmap pequeno uma vez; o quadro só faz drawImage.
+    // Cache não reativo, local ao efeito.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const atlas = new Map<string, HTMLCanvasElement>();
     let t = 0;
+
+    function bitmap(ch: string, cor: string): HTMLCanvasElement {
+      const chave = ch + cor;
+      let b = atlas.get(chave);
+      if (!b) {
+        b = document.createElement('canvas');
+        b.width = CW;
+        b.height = CH;
+        const c = b.getContext('2d')!;
+        c.font = `${CH * 1.05}px ui-monospace, Consolas, monospace`;
+        c.textBaseline = 'top';
+        c.fillStyle = cor;
+        c.fillText(ch, 0, 0);
+        atlas.set(chave, b);
+      }
+      return b;
+    }
 
     function quadro() {
       if (!desenhar || !ctx) return;
@@ -43,28 +67,29 @@
       }, t);
       const x0 = Math.floor((cols - visCols) / 2);
       const y0 = Math.floor((rows - visRows) / 2);
-      ctx.clearRect(0, 0, visCols * CW, visRows * CH);
       for (let vy = 0; vy < visRows; vy++) {
         for (let vx = 0; vx < visCols; vx++) {
           const i = (y0 + vy) * cols + x0 + vx;
           const ch = glifos[i];
-          if (!ch || ch === ' ') continue;
-          ctx.fillStyle = cores[i];
-          ctx.fillText(ch, vx * CW, vy * CH);
+          const chave = !ch || ch === ' ' ? '' : ch + cores[i];
+          const k = vy * visCols + vx;
+          if (desenhados[k] === chave) continue;
+          desenhados[k] = chave;
+          ctx.clearRect(vx * CW, vy * CH, CW, CH);
+          if (chave) ctx.drawImage(bitmap(ch, cores[i]), vx * CW, vy * CH);
         }
       }
     }
 
     function medir() {
       const { width, height } = el.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      el.width = Math.max(1, Math.round(width * dpr));
-      el.height = Math.max(1, Math.round(height * dpr));
-      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx!.font = `${CH * 1.05}px ui-monospace, Consolas, monospace`;
-      ctx!.textBaseline = 'top';
+      // Resolução 1:1 (sem escala por dpr): o fundo é decorativo e o custo de
+      // pintar em tela cheia/maximizada era o que travava o app.
+      el.width = Math.max(1, Math.round(width));
+      el.height = Math.max(1, Math.round(height));
       visCols = Math.min(cols, Math.ceil(width / CW));
       visRows = Math.min(rows, Math.ceil(height / CH));
+      desenhados = new Array(visCols * visRows).fill('\0');
       quadro();
     }
     const ro = new ResizeObserver(medir);
@@ -77,7 +102,7 @@
           if (document.hidden) return;
           t++;
           quadro();
-        }, 100);
+        }, 125);
 
     return () => {
       ro.disconnect();
@@ -90,6 +115,7 @@
   {#if fundo.ligado && fundo.abertura}
     <canvas bind:this={canvas}></canvas>
   {/if}
+  <div class="veu" class:escuro></div>
 </div>
 
 <style>
@@ -98,6 +124,17 @@
     inset: 0;
     z-index: 0;
     background: var(--color-breu);
+  }
+
+  .veu {
+    position: absolute;
+    inset: 0;
+    background: rgb(3 3 5 / 0);
+    transition: background-color 420ms ease;
+  }
+
+  .veu.escuro {
+    background: rgb(3 3 5 / 0.62);
   }
 
   canvas {

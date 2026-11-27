@@ -1,5 +1,6 @@
 import { mount } from 'svelte';
 import './app.css';
+import 'blobatar/motion.css';
 import App from './App.svelte';
 import { createBackend } from './lib/api';
 import { RoomStore } from './lib/room.svelte';

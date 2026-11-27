@@ -4,7 +4,8 @@
     value,
     min = 0,
     max = 200,
-    step = 5,
+    step = 1,
+    grande = false,
     oninput,
   }: {
     id: string;
@@ -12,19 +13,25 @@
     min?: number;
     max?: number;
     step?: number;
+    grande?: boolean;
     oninput?: (valor: number) => void;
   } = $props();
 
-  const total = $derived(Math.round((max - min) / step) + 1);
-  const ativo = $derived(Math.round((value - min) / step));
+  const TOTAL = 41;
+  // Quanto de cada traço está "cheio" (0–1): os anteriores ao valor inteiros, o
+  // da ponta parcial, os demais zero.
+  const posicao = $derived(((value - min) / (max - min)) * TOTAL);
+  // Traço em andamento (branco) até ficar cheio; aí vira verde e o próximo assume.
+  const ponta = $derived(Math.floor(posicao));
+  const cheio = (i: number) => Math.min(1, Math.max(0, posicao - i));
 </script>
 
 <!-- O <input type="range"> nativo fica por cima, invisível: teclado, leitor de tela e
      arrastar continuam nativos; os traços são só o desenho. -->
-<div class="slider">
+<div class="slider" class:grande>
   <div class="tracos" aria-hidden="true">
-    {#each { length: total } as _, i (i)}
-      <span class="tr" class:atual={i === ativo} data-traco={i <= ativo}></span>
+    {#each { length: TOTAL } as _, i (i)}
+      <span class="tr" class:atual={i === ponta} style:--f={cheio(i)} data-traco={cheio(i) > 0}></span>
     {/each}
   </div>
   <input {id} type="range" {min} {max} {step} {value} oninput={(e) => oninput?.(e.currentTarget.valueAsNumber)} />
@@ -32,8 +39,16 @@
 
 <style>
   .slider {
+    --alt-ponto: 3px;
+    --alt-traco: 16px;
     position: relative;
     height: 28px;
+  }
+
+  .slider.grande {
+    --alt-ponto: 4px;
+    --alt-traco: 30px;
+    height: 44px;
   }
 
   .tracos {
@@ -46,8 +61,9 @@
   }
 
   .tr {
-    width: 2px;
-    height: 3px;
+    --f: 0;
+    width: 3px;
+    height: calc(var(--alt-ponto) + (var(--alt-traco) - var(--alt-ponto)) * var(--f));
     border-radius: 2px;
     background: var(--color-valvula);
     transition:
@@ -56,12 +72,10 @@
   }
 
   .tr[data-traco='true'] {
-    height: 16px;
     background: var(--color-sinal);
   }
 
   .tr.atual {
-    height: 26px;
     background: var(--color-giz);
   }
 

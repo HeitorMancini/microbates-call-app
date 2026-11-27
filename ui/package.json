@@ -13,6 +13,7 @@
     "lint": "eslint . && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
   },
   "dependencies": {
+    "@blobatar/svelte": "2.7.0",
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
     "@tauri-apps/api": "^2.12.4",
     "blobatar": "2.7.0",

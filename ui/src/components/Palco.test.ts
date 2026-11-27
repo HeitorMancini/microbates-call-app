@@ -162,4 +162,20 @@ describe('Palco', () => {
     });
     expect(screen.getByTestId('palco-tela')).not.toHaveClass('pequena');
   });
+
+  it('botão direito abre o ajuste de volume e clicar no escuro fecha', async () => {
+    const onvolume = vi.fn();
+    render(Palco, {
+      participants: [p({ name: 'Ana', isLocal: true }), p({ name: 'Bia' })],
+      backend,
+      volumeOf: () => 73,
+      onvolume,
+    });
+    const bia = screen.getAllByTestId('participante')[1];
+    await userEvent.pointer({ keys: '[MouseRight]', target: bia });
+    const grupo = screen.getByRole('group', { name: /Volume de Bia/ });
+    expect((within(grupo).getByRole('slider') as HTMLInputElement).value).toBe('73');
+    await userEvent.pointer({ keys: '[MouseLeft]', target: document.querySelector('.escuro')! });
+    await vi.waitFor(() => expect(screen.queryByRole('group', { name: /Volume de Bia/ })).toBeNull());
+  });
 });
