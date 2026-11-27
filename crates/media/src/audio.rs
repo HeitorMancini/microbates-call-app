@@ -354,10 +354,24 @@ fn open_output(id: Option<&str>, shared: &Shared) -> Result<cpal::Stream, BoxErr
 #[async_trait]
 impl AudioSource for CpalAudio {
     async fn list_devices(&self) -> Result<AudioDevices, BoxError> {
-        tokio::task::spawn_blocking(|| {
+        let selection = lock(&self.selection).clone();
+        tokio::task::spawn_blocking(move || {
+            let host = cpal::default_host();
+            let inputs = list(DeviceKind::Input)?;
+            let outputs = list(DeviceKind::Output)?;
+            let current_input = selection
+                .input
+                .filter(|id| inputs.iter().any(|d| &d.id == id))
+                .or_else(|| host.default_input_device().and_then(|d| device_id(&d)));
+            let current_output = selection
+                .output
+                .filter(|id| outputs.iter().any(|d| &d.id == id))
+                .or_else(|| host.default_output_device().and_then(|d| device_id(&d)));
             Ok(AudioDevices {
-                inputs: list(DeviceKind::Input)?,
-                outputs: list(DeviceKind::Output)?,
+                inputs,
+                outputs,
+                current_input,
+                current_output,
             })
         })
         .await?

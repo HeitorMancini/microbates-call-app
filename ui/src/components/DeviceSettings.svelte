@@ -11,6 +11,30 @@
     void store.loadDevices();
   });
 
+  let versao = $state('');
+  let verificando = $state(false);
+  let resultado = $state('');
+
+  $effect(() => {
+    store.backend
+      .getAppVersion()
+      .then((v) => (versao = v))
+      .catch(() => {});
+  });
+
+  async function verificar() {
+    verificando = true;
+    resultado = '';
+    try {
+      const nova = await store.backend.checkForUpdate();
+      resultado = nova ? 'Atualização encontrada!' : 'Você já está na versão mais recente.';
+    } catch {
+      resultado = 'Não foi possível verificar.';
+    } finally {
+      verificando = false;
+    }
+  }
+
   const groups: { kind: DeviceKind; label: string }[] = [
     { kind: 'input', label: 'Microfone' },
     { kind: 'output', label: 'Saída de áudio' },
@@ -54,6 +78,15 @@
         />
         Fundo ASCII
       </label>
+    </div>
+  </div>
+  <div class="grupo">
+    <span class="rotulo">Versão {versao}</span>
+    <div class="fundo-linha">
+      <button type="button" class="botao" onclick={verificar} disabled={verificando}>
+        {verificando ? 'Verificando…' : 'Verificar atualizações'}
+      </button>
+      <span role="status" class="opcao">{resultado}</span>
     </div>
   </div>
 </div>

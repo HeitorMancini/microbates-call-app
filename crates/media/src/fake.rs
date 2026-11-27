@@ -107,6 +107,8 @@ impl AudioSource for FakeAudio {
                 id: FAKE_OUTPUT_ID.to_owned(),
                 name: "Saída simulada".to_owned(),
             }],
+            current_input: Some(FAKE_INPUT_ID.to_owned()),
+            current_output: Some(FAKE_OUTPUT_ID.to_owned()),
         })
     }
 

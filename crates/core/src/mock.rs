@@ -218,6 +218,8 @@ impl AudioSource for MockAudio {
         Ok(AudioDevices {
             inputs: vec![device("mic-1", "Mock Mic")],
             outputs: vec![device("spk-1", "Mock Speakers")],
+            current_input: Some("mic-1".to_owned()),
+            current_output: Some("spk-1".to_owned()),
         })
     }
 

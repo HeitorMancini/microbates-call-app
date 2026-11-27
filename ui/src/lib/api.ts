@@ -39,6 +39,8 @@ export function createTauriBackend(): Backend {
     getUpdateState: () => invoke<UpdateState>('update_state'),
     onUpdateState: on<UpdateState>(EVENTS.update),
     installUpdate: () => invoke('install_update'),
+    checkForUpdate: () => invoke<boolean>('check_update_now'),
+    getAppVersion: () => invoke<string>('app_version'),
     openVideo: async () => {
       const creds = await invoke<ViewerCredentials>('viewer_credentials');
       const { connectVideoSession } = await import('./video');

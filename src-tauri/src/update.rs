@@ -68,13 +68,17 @@ impl Default for UpdateService {
     }
 }
 
-async fn check_once(app: &AppHandle) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// Devolve `true` quando há versão nova (já baixada ou em andamento).
+async fn check_once(app: &AppHandle) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let svc = app.state::<UpdateService>();
-    if matches!(svc.state(), UpdateState::Ready { .. }) {
-        return Ok(());
+    if matches!(
+        svc.state(),
+        UpdateState::Ready { .. } | UpdateState::Downloading { .. }
+    ) {
+        return Ok(true);
     }
     let Some(update) = app.updater()?.check().await? else {
-        return Ok(());
+        return Ok(false);
     };
     svc.set(app, UpdateState::Downloading { percent: None });
     let mut downloaded = 0u64;
@@ -98,7 +102,7 @@ async fn check_once(app: &AppHandle) -> Result<(), Box<dyn std::error::Error + S
             let version = update.version.clone();
             *svc.pending.lock().unwrap_or_else(|e| e.into_inner()) = Some((update, bytes));
             svc.set(app, UpdateState::Ready { version });
-            Ok(())
+            Ok(true)
         }
         Err(e) => {
             svc.set(app, UpdateState::Idle);
@@ -116,6 +120,17 @@ pub async fn run(app: AppHandle) {
         }
         tokio::time::sleep(CHECK_EVERY).await;
     }
+}
+
+/// Verificação manual (botão das Configurações). `true` = há versão nova.
+#[tauri::command]
+pub async fn check_update_now(app: AppHandle) -> Result<bool, String> {
+    check_once(&app).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
 }
 
 #[tauri::command]

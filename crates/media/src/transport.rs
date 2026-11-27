@@ -1048,7 +1048,7 @@ async fn read_audio(
 }
 
 /// No audio for this long means the sender is muted or gone.
-const SPEECH_IDLE: Duration = Duration::from_millis(150);
+const SPEECH_IDLE: Duration = Duration::from_millis(400);
 
 async fn send_speaking(tx: &mpsc::Sender<TransportEvent>, id: &str, speaking: bool) {
     let _ = tx

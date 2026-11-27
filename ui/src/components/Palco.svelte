@@ -255,8 +255,11 @@
     width: 100%;
   }
 
+  /* Abaixo de barra, topo, rodapé e do ajuste de volume (z-index 4+); nunca por cima deles. */
   .tela {
     position: absolute;
+    z-index: 0;
+    isolation: isolate;
     pointer-events: auto;
     border-radius: var(--radius-painel);
     overflow: hidden;

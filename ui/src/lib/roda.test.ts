@@ -36,6 +36,15 @@ describe('posicoes', () => {
     expect(b.get('b')!.x).toBeCloseTo(550);
   });
 
+  it('palco: a tela nunca invade topo (y<128) nem rodape, mesmo em janela baixa', () => {
+    for (const altura of [200, 400, 720]) {
+      const t = posicoes(['a'], { modo: 'palco', temTela: true, largura: L, altura }).tela!;
+      expect(t.y).toBeGreaterThanOrEqual(128);
+      expect(t.h).toBeGreaterThanOrEqual(0);
+      if (altura >= 400) expect(t.y + t.h).toBeLessThanOrEqual(altura - 140);
+    }
+  });
+
   it('palco: fileira pequena em y=60, passo 84, centrada; tela 40,128', () => {
     const r = posicoes(['a', 'b', 'c'], { modo: 'palco', temTela: true, largura: L, altura: A });
     expect([...r.blobs.values()].map((p) => [p.x, p.y, p.pequeno])).toEqual([

@@ -44,6 +44,15 @@ describe('RoomScreen', () => {
     expect(await screen.findByRole('dialog', { name: 'Configurações' })).toBeVisible();
   });
 
+  it('Configurações → mostra a versão e verifica atualizações', async () => {
+    const { store, user } = await setup();
+    vi.spyOn(store.backend, 'getAppVersion').mockResolvedValue('1.2.3');
+    await user.click(screen.getByRole('button', { name: 'Configurações' }));
+    expect(await screen.findByText('Versão 1.2.3')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Verificar atualizações' }));
+    expect(await screen.findByText('Você já está na versão mais recente.')).toBeVisible();
+  });
+
   it('Configurações → seleciona dispositivo de saída', async () => {
     const { store, user } = await setup();
     await user.click(screen.getByRole('button', { name: 'Configurações' }));

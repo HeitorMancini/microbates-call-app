@@ -79,6 +79,12 @@ pub struct Device {
 pub struct AudioDevices {
     pub inputs: Vec<Device>,
     pub outputs: Vec<Device>,
+    /// Id do microfone em uso (o escolhido ou, sem escolha, o padrão do sistema).
+    #[serde(default, rename = "currentInput")]
+    pub current_input: Option<String>,
+    /// Id da saída em uso (o escolhido ou, sem escolha, o padrão do sistema).
+    #[serde(default, rename = "currentOutput")]
+    pub current_output: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

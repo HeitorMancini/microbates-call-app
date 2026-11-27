@@ -272,6 +272,8 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
     getUpdateState: async () => ({ status: 'idle' }) as UpdateState,
     onUpdateState: async () => () => {},
     installUpdate: async () => {},
+    checkForUpdate: async () => false,
+    getAppVersion: async () => '0.0.0-dev',
     openVideo: async () => videoSession(),
   };
 }

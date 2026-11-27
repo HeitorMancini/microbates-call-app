@@ -7,11 +7,15 @@
 const THRESHOLD_RMS: f64 = 330.0;
 /// Chunks (10 ms each) the indicator stays on after the last loud chunk.
 const HANGOVER_CHUNKS: u32 = 25;
+/// While speaking, the state is re-announced this often (500 ms) so a consumer that missed or
+/// overwrote the earlier `true` (event ordering, snapshot replacement) recovers by itself.
+const REFRESH_CHUNKS: u32 = 50;
 
 #[derive(Debug, Default)]
 pub(crate) struct SpeechDetector {
     speaking: bool,
     quiet_chunks: u32,
+    loud_chunks: u32,
 }
 
 impl SpeechDetector {
@@ -19,7 +23,16 @@ impl SpeechDetector {
     pub(crate) fn push(&mut self, samples: &[i16]) -> Option<bool> {
         if rms(samples) >= THRESHOLD_RMS {
             self.quiet_chunks = 0;
-            return self.set(true);
+            if let Some(changed) = self.set(true) {
+                self.loud_chunks = 0;
+                return Some(changed);
+            }
+            self.loud_chunks += 1;
+            if self.loud_chunks >= REFRESH_CHUNKS {
+                self.loud_chunks = 0;
+                return Some(true);
+            }
+            return None;
         }
         self.quiet_chunks = self.quiet_chunks.saturating_add(1);
         if self.quiet_chunks > HANGOVER_CHUNKS {
@@ -60,6 +73,16 @@ mod tests {
         assert_eq!(d.push(&QUIET), None);
         assert_eq!(d.push(&LOUD), Some(true));
         assert_eq!(d.push(&LOUD), None);
+    }
+
+    #[test]
+    fn keeps_re_announcing_while_speaking() {
+        let mut d = SpeechDetector::default();
+        assert_eq!(d.push(&LOUD), Some(true));
+        for _ in 0..REFRESH_CHUNKS - 1 {
+            assert_eq!(d.push(&LOUD), None);
+        }
+        assert_eq!(d.push(&LOUD), Some(true));
     }
 
     #[test]

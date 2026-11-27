@@ -397,8 +397,14 @@ impl Actor {
     async fn on_transport_event(&mut self, event: TransportEvent) {
         match event {
             TransportEvent::ParticipantJoined(p) => {
+                let was_speaking = self
+                    .participants
+                    .iter()
+                    .any(|existing| existing.id == p.id && existing.speaking);
                 self.participants.retain(|existing| existing.id != p.id);
-                self.participants.push(p.into());
+                let mut joined: Participant = p.into();
+                joined.speaking = was_speaking;
+                self.participants.push(joined);
             }
             TransportEvent::ParticipantLeft { id } => {
                 self.participants.retain(|p| p.is_local || p.id != id);
@@ -414,8 +420,10 @@ impl Actor {
                 }
             }
             TransportEvent::SpeakingChanged { id, speaking } => {
-                if let Some(p) = self.participants.iter_mut().find(|p| p.id == id) {
-                    p.speaking = speaking;
+                match self.participants.iter_mut().find(|p| p.id == id) {
+                    Some(p) if p.speaking != speaking => p.speaking = speaking,
+                    // Repeated announcements must not flood the UI with snapshots.
+                    _ => return,
                 }
             }
             TransportEvent::Disconnected { reason } => {

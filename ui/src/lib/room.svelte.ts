@@ -188,7 +188,12 @@ export class RoomStore {
 
   async loadDevices() {
     await this.#run(async () => {
-      this.devices = await this.backend.listAudioDevices();
+      const devices = await this.backend.listAudioDevices();
+      this.devices = devices;
+      const pick = (list: { id: string }[], current: string | null | undefined, now: string) =>
+        list.some((d) => d.id === now) ? now : (current ?? list[0]?.id ?? now);
+      this.selectedInput = pick(devices.inputs, devices.currentInput, this.selectedInput);
+      this.selectedOutput = pick(devices.outputs, devices.currentOutput, this.selectedOutput);
     });
   }
 

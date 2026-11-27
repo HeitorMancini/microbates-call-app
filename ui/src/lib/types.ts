@@ -24,6 +24,8 @@ export interface Device {
 export interface AudioDevices {
   inputs: Device[];
   outputs: Device[];
+  currentInput?: string | null;
+  currentOutput?: string | null;
 }
 
 export type DeviceKind = 'input' | 'output';
@@ -119,6 +121,8 @@ export interface Backend {
   onUpdateState(cb: (state: UpdateState) => void): Promise<Unlisten>;
   /** Instala a atualização já baixada e reinicia o app (encerra a call). */
   installUpdate(): Promise<void>;
+  checkForUpdate(): Promise<boolean>;
+  getAppVersion(): Promise<string>;
   /** Abre o canal de vídeo (decodificado pela WebView, com aceleração de hardware). */
   openVideo(): Promise<VideoSession>;
 }

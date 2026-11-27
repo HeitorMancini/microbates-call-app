@@ -247,6 +247,8 @@ pub fn run() {
             viewer_credentials,
             update::update_state,
             update::install_update,
+            update::check_update_now,
+            update::app_version,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o μChat");

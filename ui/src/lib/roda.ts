@@ -103,7 +103,7 @@ function telaDaRoda(o: Opcoes): Retangulo | null {
 
 function telaDoPalco(o: Opcoes): Retangulo | null {
   if (!o.temTela) return null;
-  return { x: 40, y: 128, w: arredondar(o.largura - 80), h: arredondar(o.altura - 268) };
+  return { x: 40, y: 128, w: Math.max(0, arredondar(o.largura - 80)), h: Math.max(0, arredondar(o.altura - 268)) };
 }
 
 export function posicoes(ids: string[], o: Opcoes): Layout {
