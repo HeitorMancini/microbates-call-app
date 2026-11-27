@@ -13,6 +13,31 @@ import type {
   UpdateState,
 } from './types';
 
+const AUDIO_KEY = 'sheeshcord:audio';
+
+interface SavedAudio {
+  noiseSuppression?: boolean;
+  micSensitivity?: number;
+  micVolume?: number;
+}
+
+/** Ajustes de áudio salvos; qualquer campo ausente ou inválido é ignorado. */
+function readSavedAudio(): SavedAudio {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(AUDIO_KEY) ?? 'null');
+    if (typeof raw !== 'object' || raw === null) return {};
+    const r = raw as Record<string, unknown>;
+    const number = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+    return {
+      noiseSuppression: typeof r.noiseSuppression === 'boolean' ? r.noiseSuppression : undefined,
+      micSensitivity: number(r.micSensitivity),
+      micVolume: number(r.micVolume),
+    };
+  } catch {
+    return {};
+  }
+}
+
 /** Estado da sala em runes. Não conhece DOM: testável só com um `Backend`. */
 export class RoomStore {
   status = $state<ConnectionStatus>('disconnected');
@@ -26,6 +51,10 @@ export class RoomStore {
   selectedOutput = $state('default');
   /** Ganho do microfone em % (0–200). */
   micVolume = $state(100);
+  /** Supressão de ruído (RNNoise) ligada. */
+  noiseSuppression = $state(true);
+  /** Sensibilidade do microfone 0–100; 100 = gate aberto (nada é cortado). */
+  micSensitivity = $state(100);
   /** Volume local por pessoa (id → %); ausente = 100. */
   volumes = $state<Record<string, number>>({});
   screenSources = $state<ScreenSource[]>([]);
@@ -83,6 +112,7 @@ export class RoomStore {
         }),
       ]);
       this.update = await this.backend.getUpdateState().catch(() => this.update);
+      await this.#applySavedAudio();
     })();
     return this.#ready;
   }
@@ -206,7 +236,48 @@ export class RoomStore {
 
   async setMicVolume(percent: number) {
     const value = Math.min(200, Math.max(0, Math.round(percent)));
-    if (await this.#run(() => this.backend.setMicVolume(value))) this.micVolume = value;
+    if (await this.#run(() => this.backend.setMicVolume(value))) {
+      this.micVolume = value;
+      this.#saveAudio();
+    }
+  }
+
+  async setNoiseSuppression(enabled: boolean) {
+    if (await this.#run(() => this.backend.setNoiseSuppression(enabled))) {
+      this.noiseSuppression = enabled;
+      this.#saveAudio();
+    }
+  }
+
+  async setMicSensitivity(percent: number) {
+    const value = Math.min(100, Math.max(0, Math.round(percent)));
+    if (await this.#run(() => this.backend.setMicSensitivity(value))) {
+      this.micSensitivity = value;
+      this.#saveAudio();
+    }
+  }
+
+  /** Lê os ajustes de áudio salvos e os reenvia ao backend (que volta aos padrões a cada abertura). */
+  async #applySavedAudio() {
+    const saved = readSavedAudio();
+    if (saved.noiseSuppression !== undefined) await this.setNoiseSuppression(saved.noiseSuppression);
+    if (saved.micSensitivity !== undefined) await this.setMicSensitivity(saved.micSensitivity);
+    if (saved.micVolume !== undefined) await this.setMicVolume(saved.micVolume);
+  }
+
+  #saveAudio() {
+    try {
+      localStorage.setItem(
+        AUDIO_KEY,
+        JSON.stringify({
+          noiseSuppression: this.noiseSuppression,
+          micSensitivity: this.micSensitivity,
+          micVolume: this.micVolume,
+        }),
+      );
+    } catch {
+      // Armazenamento indisponível: o ajuste vale só para esta sessão.
+    }
   }
 
   volumeOf(id: string): number {

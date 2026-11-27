@@ -3,9 +3,16 @@
   import type { RoomStore } from '../lib/room.svelte';
   import type { DeviceKind } from '../lib/types';
   import Icon from './Icon.svelte';
+  import { thresholdDbfs } from '../lib/micProcessing';
+  import MedidorMicrofone from './MedidorMicrofone.svelte';
   import Slider from './Slider.svelte';
 
   let { store, onDone }: { store: RoomStore; onDone: () => void } = $props();
+
+  const limiar = $derived(thresholdDbfs(store.micSensitivity));
+  const rotuloSensibilidade = $derived(
+    `Sensibilidade do microfone: ${store.micSensitivity >= 100 ? 'sem corte' : `${store.micSensitivity}%`}`,
+  );
 
   $effect(() => {
     void store.loadDevices();
@@ -62,6 +69,34 @@
   <div class="grupo">
     <label for="volume-microfone">Volume do microfone: {store.micVolume}%</label>
     <Slider id="volume-microfone" value={store.micVolume} oninput={(percent) => store.setMicVolume(percent)} />
+  </div>
+  <div class="grupo">
+    <label class="opcao" for="supressao-ruido">
+      <input
+        id="supressao-ruido"
+        type="checkbox"
+        checked={store.noiseSuppression}
+        onchange={(e) => store.setNoiseSuppression(e.currentTarget.checked)}
+      />
+      Supressão de ruído
+    </label>
+    <p class="dica">Tira teclado, ventilador e outros barulhos de fundo da sua voz.</p>
+  </div>
+  <div class="grupo">
+    <label for="sensibilidade-microfone">{rotuloSensibilidade}</label>
+    <MedidorMicrofone nivel={() => store.backend.getMicLevel()} {limiar} />
+    <Slider
+      id="sensibilidade-microfone"
+      value={store.micSensitivity}
+      min={0}
+      max={100}
+      step={5}
+      describedby="dica-sensibilidade"
+      oninput={(percent) => store.setMicSensitivity(percent)}
+    />
+    <p class="dica" id="dica-sensibilidade">
+      Quanto mais baixo, mais ruído de fundo é cortado. Fale e ajuste até a marca ficar logo abaixo do nível da sua voz.
+    </p>
   </div>
   <div class="grupo">
     <span class="rotulo">Fundo</span>
@@ -121,6 +156,12 @@
     align-items: center;
     gap: 0.5rem;
     font-weight: 500;
+  }
+
+  .dica {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--color-nevoa);
   }
 
   select.campo {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockBackend } from './mock';
 import { RoomStore } from './room.svelte';
 
@@ -7,6 +7,78 @@ const join = { serverUrl: ' ws://26.1.2.3:7880 ', room: ' resenha ', name: 'Ana'
 function makeStore() {
   return new RoomStore(createMockBackend({ latencyMs: 0, autoSpeak: false, frames: false }));
 }
+
+beforeEach(() => localStorage.clear());
+
+describe('RoomStore: processamento do microfone', () => {
+  it('começa com supressão ligada e sensibilidade 100 (gate aberto)', () => {
+    const store = makeStore();
+    expect(store.noiseSuppression).toBe(true);
+    expect(store.micSensitivity).toBe(100);
+  });
+
+  it('limita a sensibilidade a 0–100 e arredonda', async () => {
+    const store = makeStore();
+    await store.setMicSensitivity(42.6);
+    expect(store.micSensitivity).toBe(43);
+    await store.setMicSensitivity(250);
+    expect(store.micSensitivity).toBe(100);
+    await store.setMicSensitivity(-3);
+    expect(store.micSensitivity).toBe(0);
+  });
+
+  it('só muda o estado quando o backend aceita', async () => {
+    const backend = createMockBackend({ latencyMs: 0, autoSpeak: false, frames: false });
+    backend.setNoiseSuppression = vi.fn().mockRejectedValue('falhou');
+    backend.setMicSensitivity = vi.fn().mockRejectedValue('falhou');
+    const store = new RoomStore(backend);
+    await store.setNoiseSuppression(false);
+    await store.setMicSensitivity(10);
+    expect(store.noiseSuppression).toBe(true);
+    expect(store.micSensitivity).toBe(100);
+    expect(store.error).toBe('falhou');
+  });
+
+  it('persiste os ajustes e os reenvia ao backend ao iniciar', async () => {
+    const first = makeStore();
+    await first.setNoiseSuppression(false);
+    await first.setMicSensitivity(40);
+    await first.setMicVolume(130);
+
+    const backend = createMockBackend({ latencyMs: 0, autoSpeak: false, frames: false });
+    backend.setNoiseSuppression = vi.fn().mockResolvedValue(undefined);
+    backend.setMicSensitivity = vi.fn().mockResolvedValue(undefined);
+    backend.setMicVolume = vi.fn().mockResolvedValue(undefined);
+    const second = new RoomStore(backend);
+    await second.start();
+    expect(backend.setNoiseSuppression).toHaveBeenCalledWith(false);
+    expect(backend.setMicSensitivity).toHaveBeenCalledWith(40);
+    expect(backend.setMicVolume).toHaveBeenCalledWith(130);
+    expect(second.noiseSuppression).toBe(false);
+    expect(second.micSensitivity).toBe(40);
+    expect(second.micVolume).toBe(130);
+    second.stop();
+  });
+
+  it('JSON corrompido ou valores inválidos caem nos padrões sem lançar', async () => {
+    localStorage.setItem('sheeshcord:audio', '{nao e json');
+    const a = makeStore();
+    await a.start();
+    expect(a.micSensitivity).toBe(100);
+    a.stop();
+
+    localStorage.setItem(
+      'sheeshcord:audio',
+      JSON.stringify({ noiseSuppression: 'sim', micSensitivity: 'x', micVolume: null }),
+    );
+    const b = makeStore();
+    await b.start();
+    expect(b.noiseSuppression).toBe(true);
+    expect(b.micSensitivity).toBe(100);
+    expect(b.micVolume).toBe(100);
+    b.stop();
+  });
+});
 
 describe('RoomStore', () => {
   it('entra, expõe participantes e o local', async () => {

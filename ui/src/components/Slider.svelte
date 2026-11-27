@@ -7,6 +7,7 @@
     step = 1,
     grande = false,
     oninput,
+    describedby,
   }: {
     id: string;
     value: number;
@@ -15,6 +16,7 @@
     step?: number;
     grande?: boolean;
     oninput?: (valor: number) => void;
+    describedby?: string;
   } = $props();
 
   const TOTAL = 41;
@@ -34,7 +36,7 @@
       <span class="tr" class:atual={i === ponta} style:--f={cheio(i)} data-traco={cheio(i) > 0}></span>
     {/each}
   </div>
-  <input {id} type="range" {min} {max} {step} {value} oninput={(e) => oninput?.(e.currentTarget.valueAsNumber)} />
+  <input {id} type="range" {min} {max} {step} {value} aria-describedby={describedby} oninput={(e) => oninput?.(e.currentTarget.valueAsNumber)} />
 </div>
 
 <style>

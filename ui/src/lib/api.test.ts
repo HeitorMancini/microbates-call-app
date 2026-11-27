@@ -34,6 +34,8 @@ describe('backend Tauri segue o CONTRACT.md', () => {
     await b.setDeafened(false);
     await b.selectAudioDevice('output', 'headset');
     await b.setMicVolume(120);
+    await b.setNoiseSuppression(false);
+    await b.setMicSensitivity(40);
     await b.setParticipantVolume('ana', 60);
     await b.startScreenShare('monitor:0',     '1080p60', true);
     await b.stopScreenShare();
@@ -44,10 +46,18 @@ describe('backend Tauri segue o CONTRACT.md', () => {
       ['set_deafened', { deafened: false }],
       ['select_audio_device', { kind: 'output', id: 'headset' }],
       ['set_mic_volume', { percent: 120 }],
+      ['set_noise_suppression', { enabled: false }],
+      ['set_mic_sensitivity', { percent: 40 }],
       ['set_participant_volume', { id: 'ana', percent: 60 }],
       ['start_screen_share', { sourceId: 'monitor:0', preset: '1080p60', withAudio: true }],
       ['stop_screen_share'],
     ]);
+  });
+
+  it('getMicLevel devolve o nível em dBFS do comando mic_level', async () => {
+    invoke.mockResolvedValueOnce(-37.5);
+    await expect(createTauriBackend().getMicLevel()).resolves.toBe(-37.5);
+    expect(invoke).toHaveBeenCalledWith('mic_level');
   });
 
   it('repassa o payload dos eventos room://*', async () => {

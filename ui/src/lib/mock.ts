@@ -246,6 +246,12 @@ export function createMockBackend(options: MockOptions = {}): Backend & { readon
     },
 
     async setMicVolume() {},
+    async setNoiseSuppression() {},
+    async setMicSensitivity() {},
+    /** Onda lenta entre -50 e -15 dBFS, para o medidor mexer no navegador sem backend. */
+    async getMicLevel() {
+      return -32 + 18 * Math.sin(Date.now() / 600);
+    },
     async setParticipantVolume() {},
 
     async listScreenSources() {

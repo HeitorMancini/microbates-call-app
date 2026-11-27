@@ -147,3 +147,35 @@ test('roda → Ampliar tela por teclado volta ao palco', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Roda' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Tela de Bia Rocha' })).toBeVisible();
 });
+
+test('configurações: supressão de ruído, sensibilidade e medidor ao vivo', async ({ page }) => {
+  await joinRoom(page);
+  await page.getByRole('button', { name: 'Configurações' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Configurações' });
+  await expect(dialog).toBeVisible();
+
+  const supressao = dialog.getByRole('checkbox', { name: 'Supressão de ruído' });
+  await expect(supressao).toBeChecked();
+  await supressao.uncheck();
+  await expect(supressao).not.toBeChecked();
+
+  // Sem corte por padrão: o medidor aparece, a marca do limiar não.
+  const medidor = dialog.getByRole('meter', { name: 'Nível do microfone' });
+  await expect(dialog.getByText('Sensibilidade do microfone: sem corte')).toBeVisible();
+  await expect(dialog.locator('[data-limiar]')).toHaveCount(0);
+
+  // O mock faz o nível oscilar: o valor anunciado muda sozinho.
+  const primeiro = await medidor.getAttribute('aria-valuenow');
+  await expect.poll(() => medidor.getAttribute('aria-valuenow')).not.toBe(primeiro);
+
+  const sensibilidade = dialog.getByRole('slider', { name: /Sensibilidade do microfone/ });
+  await sensibilidade.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(dialog.getByText('Sensibilidade do microfone: 95%')).toBeVisible();
+  await expect(dialog.locator('[data-limiar]')).toHaveCount(1);
+  await expectNoA11yViolations(page);
+
+  // Os ajustes ficam salvos para a próxima abertura do app.
+  const salvo = await page.evaluate(() => JSON.parse(localStorage.getItem('sheeshcord:audio') ?? 'null'));
+  expect(salvo).toEqual({ noiseSuppression: false, micSensitivity: 95, micVolume: 100 });
+});

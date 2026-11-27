@@ -23,6 +23,14 @@ Status: aguardando aprovação. O indicador de fala já foi corrigido (commit ae
 
 ## 2. Supressão de ruído de qualidade e sensibilidade do microfone
 
+**Status: implementado** (plano em `docs/superpowers/plans/2026-11-26-noise-suppression-and-sensitivity.md`). Desvios do desenho original, decididos na implementação:
+- O ganho (`micVolume`) continua dentro de `MediaHub::push_mic`, então o *noise gate* roda **antes** do ganho (não depois): o limiar não depende do slider de volume e o medidor lê o sinal sem ganho.
+- O gate olha 1 chunk (10 ms) à frente, sempre, para abrir antes da primeira sílaba. Custo fixo de 10 ms de latência na captura.
+- Sensibilidade 100 = gate desligado; abaixo disso, limiar = `-60 + (100 - s) * 0,4` dBFS (99 → -59,6; 0 → -20). `threshold_dbfs` (Rust) e `thresholdDbfs` (TS) precisam andar juntos.
+- O medidor é consultado por polling (`mic_level`, ~15×/s, só com as configurações abertas) e mostra o nível antes do gate.
+- Os ajustes (`noiseSuppression`, `micSensitivity` e também `micVolume`) ficam em `localStorage` (`sheeshcord:audio`) e são reenviados ao backend na abertura.
+- Limite do RNNoise medido nos testes: remove bem ruído de baixa frequência (ventilador, rumble, mais de 50 dB), mas trata um zumbido de tom puro como voz e não o remove; ruído branco sintético é atenuado de forma irregular.
+
 **Objetivo:** voz limpa sem cortar o começo das palavras, e um controle de sensibilidade nas configurações.
 
 **Abordagem (minha escolha):** RNNoise via crate `nnnoiseless` (Rust puro, quadros de 10 ms a 48 kHz, o formato exato do pipeline) no lugar da supressão básica do WebRTC, com um *noise gate* de sensibilidade depois dele. Alternativa descartada: DeepFilterNet, de qualidade um pouco melhor, porém muito mais pesado e com dependência de runtime de ML.

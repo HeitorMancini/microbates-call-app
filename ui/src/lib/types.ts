@@ -110,6 +110,12 @@ export interface Backend {
   selectAudioDevice(kind: DeviceKind, id: string): Promise<void>;
   /** Ganho do microfone em porcentagem (0–200, 100 = sem alteração). */
   setMicVolume(percent: number): Promise<void>;
+  /** Liga/desliga a supressão de ruído (RNNoise) do microfone. */
+  setNoiseSuppression(enabled: boolean): Promise<void>;
+  /** Sensibilidade do microfone 0–100 (100 = sem corte; menor corta mais ruído de fundo). */
+  setMicSensitivity(percent: number): Promise<void>;
+  /** Nível atual do microfone em dBFS (antes do corte); `-100` quando não há sinal. */
+  getMicLevel(): Promise<number>;
   /** Volume local de uma pessoa (voz e áudio de tela) em % (0–200). */
   setParticipantVolume(id: string, percent: number): Promise<void>;
   listScreenSources(): Promise<ScreenSource[]>;
