@@ -1,5 +1,6 @@
 <script lang="ts">
   import { prepararCena, semente, type Desenhar } from '../lib/cenas/motor';
+  import { TAMANHO_SALA } from '../lib/janela';
   import { fundo } from '../lib/fundo.svelte';
 
   const CW = 6;
@@ -15,11 +16,20 @@
     const ctx = el.getContext('2d');
     if (!ctx) return;
     const quieto = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let cols = 0;
-    let rows = 0;
+    // A cena é gerada uma vez numa grade do tamanho da maior janela e a janela
+    // só mostra o recorte central: ao crescer, revela mais cenário sem esticar.
+    const cols = Math.ceil(Math.max(screen.width, TAMANHO_SALA.width) / CW);
+    const rows = Math.ceil(Math.max(screen.height, TAMANHO_SALA.height) / CH);
+    let visCols = 0;
+    let visRows = 0;
     let desenhar: Desenhar | null = null;
-    let glifos: string[] = [];
-    let cores: string[] = [];
+    try {
+      desenhar = prepararCena(cena, cols, rows, semente(seed));
+    } catch (err) {
+      console.error(`cenas.json, cena "${cena.nome}":`, err);
+    }
+    const glifos: string[] = new Array(cols * rows).fill('');
+    const cores: string[] = new Array(cols * rows).fill('');
     let t = 0;
 
     function quadro() {
@@ -31,12 +41,17 @@
         glifos[i] = ch;
         cores[i] = cor;
       }, t);
-      ctx.clearRect(0, 0, cols * CW, rows * CH);
-      for (let i = 0; i < glifos.length; i++) {
-        const ch = glifos[i];
-        if (!ch || ch === ' ') continue;
-        ctx.fillStyle = cores[i];
-        ctx.fillText(ch, (i % cols) * CW, Math.floor(i / cols) * CH);
+      const x0 = Math.floor((cols - visCols) / 2);
+      const y0 = Math.floor((rows - visRows) / 2);
+      ctx.clearRect(0, 0, visCols * CW, visRows * CH);
+      for (let vy = 0; vy < visRows; vy++) {
+        for (let vx = 0; vx < visCols; vx++) {
+          const i = (y0 + vy) * cols + x0 + vx;
+          const ch = glifos[i];
+          if (!ch || ch === ' ') continue;
+          ctx.fillStyle = cores[i];
+          ctx.fillText(ch, vx * CW, vy * CH);
+        }
       }
     }
 
@@ -48,19 +63,10 @@
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx!.font = `${CH * 1.05}px ui-monospace, Consolas, monospace`;
       ctx!.textBaseline = 'top';
-      cols = Math.ceil(width / CW);
-      rows = Math.ceil(height / CH);
-      glifos = new Array(cols * rows).fill('');
-      cores = new Array(cols * rows).fill('');
-      try {
-        desenhar =         prepararCena(cena, cols, rows, semente(seed));
-      } catch (err) {
-                console.error(`cenas.json, cena "${cena.nome}":`, err);
-        desenhar = null;
-      }
+      visCols = Math.min(cols, Math.ceil(width / CW));
+      visRows = Math.min(rows, Math.ceil(height / CH));
       quadro();
     }
-
     const ro = new ResizeObserver(medir);
     ro.observe(el);
     medir();
