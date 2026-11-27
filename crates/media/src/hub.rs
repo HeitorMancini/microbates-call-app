@@ -9,7 +9,7 @@
 //! * remote/local video -> [`MediaHub::subscribe_previews`] -> UI (`room://screen-frame`)
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -17,6 +17,7 @@ use livekit::webrtc::prelude::{I420Buffer, VideoBuffer, VideoFrame, VideoRotatio
 use livekit::webrtc::video_source::native::NativeVideoSource;
 use tokio::sync::{broadcast, mpsc};
 
+use crate::gate::{SENSITIVITY_OPEN, SILENCE_DBFS};
 use crate::video::{bgra_to_i420, fit_within, i420_to_rgba_preview, scale_i420};
 
 /// Sample rate of every PCM buffer exchanged through the hub.
@@ -192,6 +193,10 @@ struct Inner {
     throttle: Mutex<PreviewThrottle>,
     local_identity: Mutex<Option<String>>,
     mic_volume: AtomicU32,
+    noise_suppression: AtomicBool,
+    mic_sensitivity: AtomicU32,
+    /// Current microphone level in dBFS, as `f32` bits (see [`MediaHub::mic_level_dbfs`]).
+    mic_level: AtomicU32,
     counters: Counters,
 }
 
@@ -232,6 +237,9 @@ impl MediaHub {
                 }),
                 local_identity: Mutex::new(None),
                 mic_volume: AtomicU32::new(100),
+                noise_suppression: AtomicBool::new(true),
+                mic_sensitivity: AtomicU32::new(SENSITIVITY_OPEN),
+                mic_level: AtomicU32::new(SILENCE_DBFS.to_bits()),
                 counters: Counters::default(),
             }),
         }
@@ -272,6 +280,38 @@ impl MediaHub {
 
     pub fn mic_volume(&self) -> u32 {
         self.inner.mic_volume.load(Ordering::Relaxed)
+    }
+
+    /// Turns RNNoise noise suppression on the microphone on or off (on by default).
+    pub fn set_noise_suppression(&self, enabled: bool) {
+        self.inner
+            .noise_suppression
+            .store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn noise_suppression(&self) -> bool {
+        self.inner.noise_suppression.load(Ordering::Relaxed)
+    }
+
+    /// Sets the microphone sensitivity (clamped to `0..=100`); 100, the default, never cuts.
+    pub fn set_mic_sensitivity(&self, percent: u32) {
+        self.inner
+            .mic_sensitivity
+            .store(percent.min(SENSITIVITY_OPEN), Ordering::Relaxed);
+    }
+
+    pub fn mic_sensitivity(&self) -> u32 {
+        self.inner.mic_sensitivity.load(Ordering::Relaxed)
+    }
+
+    /// Microphone level in dBFS before the sensitivity gate, with a slow fall so polling
+    /// sees peaks. `-100` when there is no signal or the microphone is muted.
+    pub fn mic_level_dbfs(&self) -> f32 {
+        f32::from_bits(self.inner.mic_level.load(Ordering::Relaxed))
+    }
+
+    pub(crate) fn set_mic_level_dbfs(&self, db: f32) {
+        self.inner.mic_level.store(db.to_bits(), Ordering::Relaxed);
     }
 
     /// Queues 48 kHz mono PCM for the published microphone track. Returns `false` when
@@ -554,6 +594,26 @@ mod tests {
         hub.set_mic_volume(0);
         hub.push_mic(&[1000]);
         assert_eq!(rx.recv().await.unwrap(), vec![0]);
+    }
+
+    #[test]
+    fn mic_processing_settings_default_and_clamp() {
+        let hub = MediaHub::default();
+        assert!(
+            hub.noise_suppression(),
+            "noise suppression is on by default"
+        );
+        assert_eq!(hub.mic_sensitivity(), 100, "gate open by default");
+        assert_eq!(hub.mic_level_dbfs(), -100.0);
+
+        hub.set_noise_suppression(false);
+        assert!(!hub.noise_suppression());
+        hub.set_mic_sensitivity(40);
+        assert_eq!(hub.mic_sensitivity(), 40);
+        hub.set_mic_sensitivity(900);
+        assert_eq!(hub.mic_sensitivity(), 100);
+        hub.set_mic_level_dbfs(-33.5);
+        assert_eq!(hub.mic_level_dbfs(), -33.5);
     }
 
     #[tokio::test]

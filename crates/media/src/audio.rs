@@ -1,6 +1,7 @@
-//! Microphone capture and speaker playback with `cpal`, processed by WebRTC's audio
-//! processing module (echo cancellation, noise suppression, AGC, high-pass) that ships
-//! inside the LiveKit SDK's libwebrtc. Opus encoding/decoding happens in libwebrtc too.
+//! Microphone capture and speaker playback with `cpal`. The microphone goes through
+//! WebRTC's audio processing module (echo cancellation, AGC, high-pass; it ships inside the
+//! LiveKit SDK's libwebrtc), then RNNoise and the sensitivity gate (see `denoise.rs` and
+//! `gate.rs`). Opus encoding/decoding happens in libwebrtc too.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,9 +15,12 @@ use livekit::webrtc::native::apm::AudioProcessingModule;
 use sheeshcord_core::{AudioDevices, AudioSource, BoxError, Device, DeviceKind};
 use tokio::sync::oneshot;
 
+use crate::denoise::Denoiser;
+use crate::gate::{rms_dbfs, LevelMeter, NoiseGate, SILENCE_DBFS};
 use crate::hub::{lock, MediaHub, SAMPLES_PER_10MS, SAMPLE_RATE};
 
-/// Which WebRTC audio processing stages run on the microphone signal.
+/// Which WebRTC audio processing stages run on the microphone signal. Noise suppression is
+/// off by default: RNNoise (`MediaHub::set_noise_suppression`) replaces WebRTC's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AudioProcessing {
     pub echo_cancellation: bool,
@@ -31,7 +35,7 @@ impl Default for AudioProcessing {
     fn default() -> Self {
         Self {
             echo_cancellation: true,
-            noise_suppression: true,
+            noise_suppression: false,
             auto_gain_control: true,
             high_pass_filter: true,
             stream_delay_ms: 60,
@@ -94,9 +98,61 @@ struct CapturePipeline {
     apm: Option<SharedApm>,
     hub: MediaHub,
     flags: Arc<Flags>,
+    denoiser: Denoiser,
+    /// Whether the previous chunk went through the denoiser (to restart it when re-enabled).
+    was_denoising: bool,
+    gate: NoiseGate,
+    meter: LevelMeter,
 }
 
 impl CapturePipeline {
+    fn new(
+        channels: usize,
+        resampler: Resampler,
+        apm: Option<SharedApm>,
+        hub: MediaHub,
+        flags: Arc<Flags>,
+    ) -> Self {
+        Self {
+            channels,
+            resampler,
+            pending: Vec::with_capacity(SAMPLES_PER_10MS * 2),
+            apm,
+            hub,
+            flags,
+            denoiser: Denoiser::new(),
+            was_denoising: false,
+            gate: NoiseGate::new(),
+            meter: LevelMeter::new(),
+        }
+    }
+
+    /// RNNoise, level meter and sensitivity gate for one 10 ms chunk, after the APM.
+    ///
+    /// Returns `false` when there is nothing to send yet (the gate's first, priming call).
+    fn condition(&mut self, chunk: &mut [i16]) -> bool {
+        let denoise = self.hub.noise_suppression();
+        if denoise {
+            if !self.was_denoising {
+                self.denoiser.reset();
+            }
+            self.denoiser.process(chunk);
+        }
+        self.was_denoising = denoise;
+
+        // The meter reads before the gate so the user can see where to put the threshold.
+        let level = rms_dbfs(chunk);
+        let shown = if self.flags.capture_muted.load(Ordering::Relaxed) {
+            self.meter = LevelMeter::new();
+            SILENCE_DBFS
+        } else {
+            self.meter.push(level)
+        };
+        self.hub.set_mic_level_dbfs(shown);
+
+        self.gate.process(chunk, level, self.hub.mic_sensitivity())
+    }
+
     fn process<T>(&mut self, data: &[T])
     where
         T: Sample,
@@ -114,7 +170,8 @@ impl CapturePipeline {
                     tracing::trace!(error = %e.message, "apm capture");
                 }
             }
-            if !self.flags.capture_muted.load(Ordering::Relaxed) {
+            let ready = self.condition(&mut chunk);
+            if ready && !self.flags.capture_muted.load(Ordering::Relaxed) {
                 self.hub.push_mic(&chunk);
             }
         }
@@ -308,14 +365,13 @@ fn open_input(id: Option<&str>, shared: &Shared) -> Result<cpal::Stream, BoxErro
     let device = find_device(DeviceKind::Input, id)?;
     let supported = device.default_input_config()?;
     let config = supported.config();
-    let pipeline = CapturePipeline {
-        channels: usize::from(config.channels.max(1)),
-        resampler: Resampler::new(config.sample_rate, SAMPLE_RATE),
-        pending: Vec::with_capacity(SAMPLES_PER_10MS * 2),
-        apm: shared.apm.clone(),
-        hub: shared.hub.clone(),
-        flags: Arc::clone(&shared.flags),
-    };
+    let pipeline = CapturePipeline::new(
+        usize::from(config.channels.max(1)),
+        Resampler::new(config.sample_rate, SAMPLE_RATE),
+        shared.apm.clone(),
+        shared.hub.clone(),
+        Arc::clone(&shared.flags),
+    );
     let stream = match supported.sample_format() {
         SampleFormat::F32 => build_input::<f32>(&device, config, pipeline)?,
         SampleFormat::I16 => build_input::<i16>(&device, config, pipeline)?,
@@ -503,22 +559,119 @@ mod tests {
     #[test]
     fn capture_pipeline_downmixes_into_10ms_chunks() {
         let hub = MediaHub::default();
+        hub.set_noise_suppression(false);
         let (tx, mut rx) = tokio::sync::mpsc::channel(16);
         hub.set_mic_sink(Some(tx));
-        let mut pipeline = CapturePipeline {
-            channels: 2,
-            resampler: Resampler::new(48_000, 48_000),
-            pending: Vec::new(),
-            apm: None,
-            hub,
-            flags: Arc::default(),
-        };
-        pipeline.process(&vec![0.5f32; SAMPLES_PER_10MS * 2 * 2 + 2]);
+        let mut pipeline = test_pipeline(2, hub);
+        // The gate holds back one chunk (its lookahead), so three chunks yield two.
+        pipeline.process(&vec![0.5f32; SAMPLES_PER_10MS * 3 * 2 + 2]);
         let first = rx.try_recv().unwrap();
         assert_eq!(first.len(), SAMPLES_PER_10MS);
         assert!((i32::from(first[100]) - i32::from(i16::MAX / 2)).abs() < 2);
         assert!(rx.try_recv().is_ok());
         assert!(rx.try_recv().is_err());
+    }
+
+    fn test_pipeline(channels: usize, hub: MediaHub) -> CapturePipeline {
+        CapturePipeline::new(
+            channels,
+            Resampler::new(48_000, 48_000),
+            None,
+            hub,
+            Arc::default(),
+        )
+    }
+
+    /// A 10 ms mono block of a constant, as the `f32` samples the device would deliver.
+    fn constant(level: f32, chunks: usize) -> Vec<f32> {
+        vec![level; SAMPLES_PER_10MS * chunks]
+    }
+
+    fn collect(rx: &mut tokio::sync::mpsc::Receiver<Vec<i16>>) -> Vec<Vec<i16>> {
+        std::iter::from_fn(|| rx.try_recv().ok()).collect()
+    }
+
+    #[test]
+    fn capture_pipeline_passes_everything_at_sensitivity_100() {
+        let hub = MediaHub::default();
+        hub.set_noise_suppression(false);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        hub.set_mic_sink(Some(tx));
+        let mut pipeline = test_pipeline(1, hub);
+        // Roughly -80 dBFS: far below any gate threshold, but sensitivity 100 never cuts.
+        pipeline.process(&constant(0.0001, 10));
+        let out = collect(&mut rx);
+        assert_eq!(out.len(), 9);
+        // The resampler lags one sample, so the very first sample of the stream is 0.
+        assert!(out.iter().flatten().skip(1).all(|&s| s == 3));
+    }
+
+    #[test]
+    fn capture_pipeline_gates_below_the_threshold() {
+        let hub = MediaHub::default();
+        hub.set_noise_suppression(false);
+        hub.set_mic_sensitivity(50);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(256);
+        hub.set_mic_sink(Some(tx));
+        let mut pipeline = test_pipeline(1, hub);
+        // About -50 dBFS against a -40 dBFS threshold: cut to silence once the gate fades.
+        pipeline.process(&constant(0.003, 60));
+        let out = collect(&mut rx);
+        assert!(out.last().unwrap().iter().all(|&s| s == 0));
+        // About -20 dBFS passes unchanged.
+        pipeline.process(&constant(0.1, 5));
+        let loud = collect(&mut rx);
+        let expected = (0.1 * f32::from(i16::MAX)) as i16;
+        assert!(loud.last().unwrap().iter().all(|&s| s == expected));
+    }
+
+    #[test]
+    fn capture_pipeline_reports_the_level_before_the_gate() {
+        let hub = MediaHub::default();
+        hub.set_noise_suppression(false);
+        hub.set_mic_sensitivity(0);
+        let mut pipeline = test_pipeline(1, hub.clone());
+        // About -26 dBFS is below the -20 dBFS threshold (gated) but still shows on the meter.
+        pipeline.process(&constant(0.05, 3));
+        let level = hub.mic_level_dbfs();
+        assert!((level + 26.0).abs() < 1.0, "level {level}");
+    }
+
+    #[test]
+    fn capture_pipeline_meter_is_silent_while_muted() {
+        let hub = MediaHub::default();
+        hub.set_noise_suppression(false);
+        let flags = Arc::new(Flags::default());
+        let mut pipeline = CapturePipeline::new(
+            1,
+            Resampler::new(48_000, 48_000),
+            None,
+            hub.clone(),
+            Arc::clone(&flags),
+        );
+        pipeline.process(&constant(0.2, 3));
+        assert!(hub.mic_level_dbfs() > -30.0);
+        flags.capture_muted.store(true, Ordering::Relaxed);
+        pipeline.process(&constant(0.2, 1));
+        assert_eq!(hub.mic_level_dbfs(), -100.0);
+    }
+
+    #[test]
+    fn capture_pipeline_denoiser_follows_the_setting() {
+        let hub = MediaHub::default();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        hub.set_mic_sink(Some(tx));
+        let mut pipeline = test_pipeline(1, hub.clone());
+        // On: RNNoise's silent first frame shows up, a bypassed pipeline would not have it.
+        pipeline.process(&constant(0.3, 3));
+        let denoised = collect(&mut rx);
+        assert!(denoised[0].iter().all(|&s| s == 0));
+
+        hub.set_noise_suppression(false);
+        pipeline.process(&constant(0.3, 3));
+        let bypassed = collect(&mut rx);
+        let expected = (0.3 * f32::from(i16::MAX)) as i16;
+        assert!(bypassed.last().unwrap().iter().all(|&s| s == expected));
     }
 
     #[test]
@@ -543,6 +696,31 @@ mod tests {
         pipeline.fill(&mut out);
         // The resampler lags one sample behind, so skip the first (interpolated) frame.
         assert!(out[2..].iter().all(|&s| s == 0.0));
+    }
+
+    /// Needs a real microphone; run with `cargo test -p media real_microphone -- --ignored --nocapture`.
+    #[tokio::test]
+    #[ignore = "needs a real microphone"]
+    async fn real_microphone_runs_through_the_whole_pipeline() {
+        let hub = MediaHub::default();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
+        hub.set_mic_sink(Some(tx));
+        hub.set_mic_sensitivity(50);
+        let audio = CpalAudio::new(hub.clone());
+        audio.start().await.expect("microphone and speakers open");
+        let mut peak = -100.0f32;
+        for _ in 0..30 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            peak = peak.max(hub.mic_level_dbfs());
+        }
+        audio.stop().await;
+        let chunks = std::iter::from_fn(|| rx.try_recv().ok()).count();
+        println!("chunks {chunks}, peak level {peak:.1} dBFS");
+        assert!(
+            chunks > 200,
+            "about 100 chunks per second for 3 s, got {chunks}"
+        );
+        assert!(peak > -100.0, "the meter saw the microphone");
     }
 
     #[test]

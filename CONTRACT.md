@@ -13,6 +13,10 @@ App de voz + compartilhamento de tela (sem chat) para ~7 amigos, servidor LiveKi
 - `set_muted({ muted: boolean })`, `set_deafened({ deafened: boolean })`
 - `list_audio_devices()` -> `{ inputs: Device[], outputs: Device[] }` (`Device = { id: string, name: string }`)
 - `select_audio_device({ kind: "input" | "output", id: string })`
+- `set_mic_volume({ percent: number })` (0–200, 100 = sem alteração)
+- `set_noise_suppression({ enabled: boolean })` (RNNoise; ligada por padrão)
+- `set_mic_sensitivity({ percent: number })` (0–100; 100 = sem corte, padrão; menor corta mais ruído de fundo)
+- `mic_level()` -> `number` (nível do microfone em dBFS antes do corte, `-100` sem sinal; a UI consulta ~15×/s com as configurações abertas)
 - `list_screen_sources()` -> `ScreenSource[]` (`{ id: string, name: string, kind: "monitor" | "window" }`)
 - `start_screen_share({ sourceId: string, preset: "1080p30" | "1080p60" | "720p30" })`, `stop_screen_share()`
 

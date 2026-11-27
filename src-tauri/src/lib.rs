@@ -148,6 +148,22 @@ fn set_mic_volume(hub: State<'_, MediaHub>, percent: u32) {
 }
 
 #[tauri::command]
+fn set_noise_suppression(hub: State<'_, MediaHub>, enabled: bool) {
+    hub.set_noise_suppression(enabled);
+}
+
+#[tauri::command]
+fn set_mic_sensitivity(hub: State<'_, MediaHub>, percent: u32) {
+    hub.set_mic_sensitivity(percent);
+}
+
+/// Nível do microfone em dBFS (antes do corte da sensibilidade); `-100` sem sinal.
+#[tauri::command]
+fn mic_level(hub: State<'_, MediaHub>) -> f32 {
+    hub.mic_level_dbfs()
+}
+
+#[tauri::command]
 fn set_participant_volume(hub: State<'_, MediaHub>, id: String, percent: u32) {
     hub.set_participant_volume(&id, percent);
 }
@@ -240,6 +256,9 @@ pub fn run() {
             list_audio_devices,
             select_audio_device,
             set_mic_volume,
+            set_noise_suppression,
+            set_mic_sensitivity,
+            mic_level,
             set_participant_volume,
             list_screen_sources,
             start_screen_share,

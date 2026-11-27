@@ -9,8 +9,10 @@
 //! All of them exchange raw media through a shared [`MediaHub`].
 
 mod audio;
+mod denoise;
 #[cfg(feature = "fake")]
 mod fake;
+mod gate;
 mod hub;
 // GPU screen encoder (Media Foundation).
 mod hwenc;
